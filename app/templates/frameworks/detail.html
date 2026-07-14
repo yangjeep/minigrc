@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ framework.name }} · playground-grc{% endblock %}
+{% block content %}
+<p><a href="/frameworks">&larr; Frameworks</a></p>
+<h1>{{ framework.name }}</h1>
+<p class="lede">Version {{ framework.version }}</p>
+{% if framework.is_placeholder_content %}
+<p class="notice">This catalogue contains placeholder reference codes and summaries, not licensed ISO text. Replace with your organization's own licensed copy before relying on it for a real audit.</p>
+{% endif %}
+<p>{{ framework.description }}</p>
+
+<h2>Requirements</h2>
+<table>
+  <thead>
+    <tr><th>Reference</th><th>Title</th><th>Summary</th></tr>
+  </thead>
+  <tbody>
+    {% for requirement in framework.requirements %}
+    <tr>
+      <td>{{ requirement.reference_code }}</td>
+      <td>{{ requirement.title }}</td>
+      <td>{{ requirement.summary }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3">No requirements yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Frameworks · playground-grc{% endblock %}
+{% block content %}
+<h1>Frameworks</h1>
+<table>
+  <thead>
+    <tr><th>Name</th><th>Version</th><th>Requirements</th></tr>
+  </thead>
+  <tbody>
+    {% for framework in frameworks %}
+    <tr>
+      <td><a href="/frameworks/{{ framework.id }}">{{ framework.name }}</a></td>
+      <td>{{ framework.version }}</td>
+      <td>{{ framework.requirements|length }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3">No frameworks yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
