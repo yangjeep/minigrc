@@ -34,7 +34,8 @@ PLACEHOLDERS = {
     },
     "connectors": {
         "title": "Connectors",
-        "status": "Google Drive (policy sources) implemented — see /connectors/google-drive. "
+        "status": "Google Drive (policy sources + approvals) implemented — see /connectors/google-drive. "
+        "Optional Google Workspace Directory sync implemented — see People. "
         "GitHub/Azure/AWS/Asana connectors not built in this PR.",
         "responsibility": (
             "Each connector is a small module with a connection test, supported checks, and "

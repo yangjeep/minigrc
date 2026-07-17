@@ -314,3 +314,47 @@ Google-proprietary formats with no independent viewer.
 **Supersedes:** Nothing — extends decision #11 (local, versioned policy
 storage) with an optional capture source; local storage remains
 authoritative either way.
+
+## 19. Drive Approvals is best-effort and never blocks a policy sync
+
+**Decision:** `app/google_drive_approvals.py::fetch_approvals` raises a
+single `ApprovalsUnavailableError` for any failure — missing scope, 403,
+404, malformed response, or a tenant where the Approvals API doesn't
+apply — and `app/routers/policies.py::sync_drive_approvals` catches it and
+shows "Approval data unavailable" rather than surfacing an error that
+looks like *this app* is broken. `PolicyApprovalSnapshot` rows are
+append-only, deduplicated only on an exact-unchanged re-sync (matching
+`external_approval_id` + `raw_payload_sha256`) — a real status change
+(e.g. pending → approved) always creates a new row rather than mutating
+the prior one, and is associated with the specific `PolicyVersion` it was
+synced against.
+
+**Rationale:** Google's own Approvals API documentation is explicit that
+tenant availability, permissions, and behavior vary — this is a
+genuinely optional capability, not a guaranteed one, and the spec for
+this branch says so directly. Treating any failure as fatal would make
+an unrelated, unsupported tenant configuration block ordinary policy
+capture/sync work. This app never builds an internal approval workflow
+or auto-approves/declines anything — it only mirrors what Drive already
+recorded.
+
+## 20. Optional Workspace Directory sync piggybacks on the Drive connection
+
+**Decision:** `app/google_workspace_directory.py` requests the read-only
+`admin.directory.user.readonly` scope as an *additional* scope on the
+same Google Drive OAuth connection (`GRC_GOOGLE_WORKSPACE_DIRECTORY_ENABLED=true`
+adds it to the consent screen), rather than a third separate OAuth flow.
+`sync_directory_users` only creates/updates `Person` rows for users the
+Directory API actually returns — it never deletes a `Person` missing from
+a sync (e.g. a manually added contractor), preserving history per
+decision #14.
+
+**Rationale:** A third distinct OAuth connection for one small read-only
+scope would be disproportionate complexity for what's explicitly framed
+as "an optional extension of the Google integration, with a clean manual
+fallback." Piggybacking keeps exactly one Drive-related credential to
+manage, encrypt, and revoke, while still keeping the scope itself
+optional and separately toggleable. If the scope isn't granted (not
+enabled, or an admin declined it at consent), `Person` records stay fully
+manual — nothing in `app/routers/people.py` depends on this sync having
+ever run.

@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     google_drive_client_id: str = ""
     google_drive_client_secret: str = ""
 
+    # Optional: request the read-only Workspace Directory scope in the
+    # same Drive connection consent grant. See
+    # app/google_workspace_directory.py.
+    google_workspace_directory_enabled: bool = False
+
     encryption_key: str = ""
 
     @property
