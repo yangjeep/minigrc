@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}User roster · {{ vendor.system_name }} · minigrc{% endblock %}
+{% block content %}
+<h1>User roster — {{ vendor.system_name }}</h1>
+<p class="lede"><a href="/vendors/{{ vendor.id }}/roster/new">+ Import new snapshot</a></p>
+
+{% if snapshot is none %}
+<p>No roster snapshot has been imported yet.</p>
+{% else %}
+<p>Latest snapshot: {{ snapshot.imported_at }} · {{ snapshot.row_count }} user(s) · file
+  <code>{{ snapshot.original_filename }}</code> · sha256 <code>{{ snapshot.sha256[:12] }}…</code></p>
+
+{% if inactive_flagged %}
+<div class="flash flash-error" role="status">
+  <strong>Departed/suspended people still appear in this roster:</strong>
+  <ul>{% for row in inactive_flagged %}<li>{{ row.imported_email }} ({{ row.imported_role }})</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if unmatched_internal %}
+<div class="flash flash-error" role="status">
+  <strong>Internal-looking emails with no matched Person:</strong>
+  <ul>{% for row in unmatched_internal %}<li>{{ row.imported_email }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<h2>Changes since previous snapshot</h2>
+<ul>
+  <li>Added: {{ delta.added|length }}</li>
+  <li>Removed: {{ delta.removed|length }}</li>
+  <li>Role changes: {{ delta.role_changes|length }}</li>
+  <li>Status changes: {{ delta.status_changes|length }}</li>
+  <li>Newly assigned admins: {{ delta.newly_assigned_admins|length }}</li>
+</ul>
+{% if delta.newly_assigned_admins %}
+<p><strong>New admins:</strong>
+  {% for row in delta.newly_assigned_admins %}{{ row.imported_email }}{% if not loop.last %}, {% endif %}{% endfor %}
+</p>
+{% endif %}
+
+<h2>Current roster</h2>
+<table>
+  <thead>
+    <tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th><th>Last login</th><th>Matched person</th><th>Link</th></tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row.imported_email }}</td>
+      <td>{{ row.imported_name }}</td>
+      <td>{{ row.imported_role }}</td>
+      <td>{{ row.imported_status }}</td>
+      <td>{{ row.imported_last_login_at or "—" }}</td>
+      <td>{{ row.matched_person.display_name or row.matched_person.email if row.matched_person else "Unmatched" }}</td>
+      <td>
+        {% if request.state.user.role == "admin" %}
+        <form method="post" action="/vendors/{{ vendor.id }}/roster/rows/{{ row.id }}/link" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+          <select name="person_id">
+            <option value="">—</option>
+            {% for p in people %}
+            <option value="{{ p.id }}" {% if row.matched_person_id==p.id %}selected{% endif %}>{{ p.display_name or p.email }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit">Link</button>
+        </form>
+        {% else %}
+        <span class="lede">Admin only</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

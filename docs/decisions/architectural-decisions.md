@@ -210,3 +210,23 @@ this email a current employee?" A single shared table with an
 source (manual edit or a directory sync) says so, and it's never inferred
 or deleted from a missing sync record, only updated by explicit source
 data — preserving history rather than guessing.
+
+## 15. Vendor roster imports are append-only snapshots, validated wholesale
+
+**Decision:** `app/vendor_roster_import.py::import_vendor_roster_snapshot`
+parses and validates the entire CSV (bounded read via `app/uploads.py`,
+row-count cap, per-row validation, duplicate-normalized-email rejection)
+before writing a single row. A successful import always creates a *new*
+`VendorUserSnapshot` — no update or delete route exists for a past
+snapshot or its rows, mirroring the immutable `PolicyVersion` pattern from
+decision #11.
+
+**Rationale:** A vendor roster export is evidence of who had access at a
+point in time; overwriting it would destroy exactly the history an
+auditor needs. The all-or-nothing validation mirrors
+`app/csv_import.py::import_requirements_csv`'s existing approach (now
+sharing its bounded-read helper — see `app/uploads.py`) — a partially
+imported roster is worse than a rejected one. Linking an imported row to a
+`Person` (admin-only) only ever sets `matched_person_id`; the imported
+columns stay exactly as reported, so the evidentiary record and the
+organization's interpretation of it stay separately auditable.
