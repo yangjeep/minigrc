@@ -63,12 +63,17 @@ def parse_drive_file_id(value: str) -> str:
     return candidate
 
 
-def build_authorization_url(*, client_id: str, redirect_uri: str, state: str) -> str:
+def build_authorization_url(*, client_id: str, redirect_uri: str, state: str, extra_scopes: str = "") -> str:
+    """`extra_scopes` (space-separated) lets the optional Workspace
+    Directory sync request its read-only scope in the same consent grant
+    as this connection, without making Directory sync a separate OAuth
+    flow — see app/google_workspace_directory.py."""
+    scope = f"{DRIVE_SCOPE} {extra_scopes}".strip()
     params = {
         "client_id": client_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": DRIVE_SCOPE,
+        "scope": scope,
         "access_type": "offline",
         "prompt": "consent",
         "include_granted_scopes": "true",

@@ -90,6 +90,7 @@ AuditEvent      (standalone log, references other entities by id + type)
 | Vendor/System | One system the org purchases or uses (GitHub, Slack, AWS, ...) — identity, access continuity, cost, contract/renewal, support | Yes — `VendorSystem` |
 | Vendor user roster snapshot | Append-only, immutable capture of a vendor's reported user list at one point in time | Yes — `VendorUserSnapshot` / `VendorUserSnapshotRow` |
 | Google Drive connection | One org-level, admin-managed, encrypted-at-rest OAuth connection used to read Drive file metadata/content | Yes — `GoogleDriveConnection` |
+| Policy approval snapshot | Append-only mirror of one Google Drive Approvals API record for a PolicyVersion — optional, best-effort | Yes — `PolicyApprovalSnapshot` |
 
 ## Why some entities were deferred
 

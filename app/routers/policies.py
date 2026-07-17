@@ -19,7 +19,8 @@ from app.google_drive import (
     list_revisions,
     parse_drive_file_id,
 )
-from app.models import POLICY_STATUSES, Policy, PolicyVersion
+from app.google_drive_approvals import ApprovalsUnavailableError, fetch_approvals, parse_approval
+from app.models import POLICY_STATUSES, Policy, PolicyApprovalSnapshot, PolicyVersion
 from app.routers.google_drive import get_access_token_for_active_connection
 from app.storage import (
     UploadValidationError,
@@ -153,9 +154,17 @@ def view_policy(policy_id: str, request: Request, db: Session = Depends(get_db))
     if policy is None:
         raise HTTPException(status_code=404, detail="Policy not found")
 
+    approval_snapshots = sorted(
+        (snap for version in policy.versions for snap in version.approval_snapshots),
+        key=lambda s: s.captured_at,
+        reverse=True,
+    )
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
-        request, "policies/detail.html", {"policy": policy, "statuses": POLICY_STATUSES}
+        request,
+        "policies/detail.html",
+        {"policy": policy, "statuses": POLICY_STATUSES, "approval_snapshots": approval_snapshots},
     )
 
 
@@ -445,4 +454,87 @@ def capture_drive_version(
     )
     return redirect_with_flash(
         f"/policies/{policy_id}", f"Captured version {next_version_number} from Drive."
+    )
+
+
+@router.post("/{policy_id}/drive-approvals")
+def sync_drive_approvals(
+    policy_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin),
+    _csrf: None = Depends(verify_csrf),
+):
+    """Mirror Drive Approvals for the latest captured version.
+
+    Optional capability: any failure (unsupported tenant, missing scope,
+    no approvals on this file) shows "Approval data unavailable" rather
+    than failing the request — see app/google_drive_approvals.py.
+    """
+    policy = db.get(Policy, policy_id)
+    if policy is None or not policy.drive_file_id:
+        raise HTTPException(status_code=404, detail="Policy is not linked to a Drive file")
+
+    target_version = policy.latest_version
+    if target_version is None:
+        return redirect_with_flash(
+            f"/policies/{policy_id}", "Capture a version before syncing approvals.", kind="error"
+        )
+
+    settings = request.app.state.settings
+    try:
+        _connection, access_token = get_access_token_for_active_connection(db, settings)
+        raw_approvals = fetch_approvals(policy.drive_file_id, access_token=access_token)
+    except (GoogleDriveError, ApprovalsUnavailableError):
+        return redirect_with_flash(f"/policies/{policy_id}", "Approval data unavailable.", kind="error")
+
+    existing_hashes = {
+        (snap.external_approval_id, snap.raw_payload_sha256)
+        for version in policy.versions
+        for snap in version.approval_snapshots
+    }
+
+    created_count = 0
+    for raw in raw_approvals:
+        try:
+            parsed = parse_approval(raw)
+        except ApprovalsUnavailableError:
+            continue
+        if (parsed.external_approval_id, parsed.raw_payload_sha256) in existing_hashes:
+            continue  # unchanged since a prior sync — skip, don't duplicate
+
+        db.add(
+            PolicyApprovalSnapshot(
+                policy_version_id=target_version.id,
+                external_approval_id=parsed.external_approval_id,
+                status=parsed.status,
+                initiator=parsed.initiator,
+                reviewer_responses_json=parsed.reviewer_responses_json,
+                create_time=parsed.create_time,
+                modify_time=parsed.modify_time,
+                complete_time=parsed.complete_time,
+                due_time=parsed.due_time,
+                file_content_change_behavior=parsed.file_content_change_behavior,
+                raw_payload_sha256=parsed.raw_payload_sha256,
+            )
+        )
+        created_count += 1
+
+    if created_count:
+        record_audit_event(
+            db,
+            entity_type="policy_version",
+            entity_id=target_version.id,
+            action="sync_drive_approvals",
+            detail=(
+                f"Captured {created_count} new approval snapshot(s) for "
+                f"'{policy.title}' v{target_version.version_number}"
+            ),
+            actor=admin.email,
+        )
+    return redirect_with_flash(
+        f"/policies/{policy_id}",
+        f"Synced approvals: {created_count} new snapshot(s)."
+        if created_count
+        else "No new approval changes.",
     )

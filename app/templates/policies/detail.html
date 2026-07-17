@@ -36,6 +36,31 @@
   <input type="text" name="change_note" placeholder="Change note (optional)">
   <button type="submit">Capture current version</button>
 </form>
+<form method="post" action="/policies/{{ policy.id }}/drive-approvals" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit">Sync Drive approvals</button>
+</form>
+{% endif %}
+
+<h3>Approval history</h3>
+{% if approval_snapshots %}
+<table>
+  <thead><tr><th>Version</th><th>Status</th><th>Initiator</th><th>Modified</th><th>Completed</th><th>Captured</th></tr></thead>
+  <tbody>
+    {% for snap in approval_snapshots %}
+    <tr>
+      <td>v{{ snap.policy_version.version_number }}</td>
+      <td>{{ snap.status or "—" }}</td>
+      <td>{{ snap.initiator or "—" }}</td>
+      <td>{{ snap.modify_time or "—" }}</td>
+      <td>{{ snap.complete_time or "—" }}</td>
+      <td>{{ snap.captured_at }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Approval data unavailable — not yet synced, or Drive Approvals isn't available for this file/tenant.</p>
 {% endif %}
 {% else %}
 <p>Not linked to a Drive file. Google Drive is never treated as permanent archival storage — a captured

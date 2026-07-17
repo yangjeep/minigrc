@@ -46,11 +46,11 @@ without duplicating tools that already do their job well.
 | Authentication | Implemented — local email/password, server-side sessions, optional Google OIDC login | Internal (this app), identity optionally asserted by Google |
 | Frameworks / Requirements | Implemented — checklist, manual add, CSV import | Internal (this app), seeded with placeholder content |
 | Requirement assessments & notes | Implemented — applicable/state/owner, append-only notes, audit history | Internal (this app) |
-| Policies | Implemented — versioned PDF/DOCX repository, review dates, optional Google Drive source association + capture | Internal (this app), optionally sourced from Google Drive |
+| Policies | Implemented — versioned PDF/DOCX repository, review dates, optional Google Drive source association + capture + approval history | Internal (this app), optionally sourced from Google Drive |
 | Internal Controls | Implemented — list, detail, map to requirements | Internal (this app) |
 | Risks | Implemented — structured register, validated bounds | Internal (this app) |
 | Audit Log | Implemented — real event history | Internal (this app) |
-| People directory | Implemented — manual entries; optional Google Workspace Directory sync (future commit on this branch) | Internal (this app), optionally synced from Google Workspace |
+| People directory | Implemented — manual entries; optional Google Workspace Directory sync | Internal (this app), optionally synced from Google Workspace |
 | Vendor/System register | Implemented — one record per purchased/used system, operational flags, renewals view | Internal (this app) |
 | Vendor roster snapshots | Implemented — append-only CSV import per vendor, delta view, Person matching, admin-only linking | Internal (this app), sourced from the vendor's own export |
 | Evidence | Placeholder page only | Internal metadata (future); large files in object storage (future) |
