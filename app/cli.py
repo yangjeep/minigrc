@@ -7,15 +7,24 @@ bootstrapping the first user) rather than a general admin CLI framework.
 from __future__ import annotations
 
 import argparse
+import datetime
 import getpass
 import sys
 
 from sqlalchemy import func, select
 
 from app.audit import record_audit_event
+from app.aws_connector import (
+    AwsConnectionError,
+    build_evidence_snapshot,
+    build_session,
+    check_cloudtrail,
+    check_iam,
+)
 from app.config import get_settings
+from app.crypto import DecryptionError, EncryptionNotConfiguredError, decrypt
 from app.db import build_engine, init_db, make_session_factory, session_scope
-from app.models import User
+from app.models import AwsConnection, User
 from app.security import hash_password, normalize_email
 
 MIN_PASSWORD_LENGTH = 8
@@ -93,6 +102,59 @@ def promote_admin(email: str) -> int:
     return 0
 
 
+def aws_run_checks() -> int:
+    """Run CloudTrail + IAM evidence checks against the configured AWS
+    connection. Suitable for an external cron later — this command itself
+    adds no scheduling infrastructure."""
+    settings = get_settings()
+    engine = build_engine(settings.resolved_database_path)
+    init_db(engine)
+    session_factory = make_session_factory(engine)
+
+    with session_scope(session_factory) as session:
+        connection = session.scalar(select(AwsConnection).order_by(AwsConnection.created_at.desc()).limit(1))
+        if connection is None:
+            print(
+                "error: no AWS connection configured — set one up at /connectors/aws first", file=sys.stderr
+            )
+            return 1
+
+        external_id = None
+        if connection.encrypted_external_id:
+            try:
+                external_id = decrypt(connection.encrypted_external_id, key=settings.encryption_key)
+            except (DecryptionError, EncryptionNotConfiguredError) as exc:
+                print(f"error: could not decrypt stored external ID: {exc}", file=sys.stderr)
+                return 1
+
+        region = connection.regions.split(",")[0].strip() if connection.regions else None
+        try:
+            aws_session = build_session(role_arn=connection.role_arn, external_id=external_id, region=region)
+        except AwsConnectionError as exc:
+            connection.last_error_summary = str(exc)
+            print(f"error: could not start an AWS session: {exc}", file=sys.stderr)
+            return 1
+
+        results = [check_cloudtrail(aws_session), check_iam(aws_session)]
+        for result in results:
+            session.add(build_evidence_snapshot(result, connection_id=connection.id))
+            print(f"{result.check_key}: {result.status} — {result.summary}")
+
+        connection.last_check_at = datetime.datetime.now(datetime.UTC)
+        connection.last_error_summary = ""
+        record_audit_event(
+            session,
+            entity_type="aws_connection",
+            entity_id=connection.id,
+            action="run_checks",
+            detail="Ran AWS evidence checks via CLI: "
+            + ", ".join(f"{r.check_key}={r.status}" for r in results),
+            actor="cli",
+        )
+
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -109,6 +171,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     promote_admin_parser.add_argument("--email", required=True)
 
+    subparsers.add_parser(
+        "aws-run-checks", help="Run AWS CloudTrail/IAM evidence checks against the configured connection"
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "migrate":
@@ -117,6 +183,8 @@ def main(argv: list[str] | None = None) -> int:
         return create_user(args.email)
     if args.command == "promote-admin":
         return promote_admin(args.email)
+    if args.command == "aws-run-checks":
+        return aws_run_checks()
 
     parser.print_help()
     return 1

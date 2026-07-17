@@ -1,6 +1,6 @@
 import pytest
 
-PLACEHOLDER_SLUGS = ["evidence", "actions", "connectors", "trust-center"]
+PLACEHOLDER_SLUGS = ["actions", "connectors", "trust-center"]
 
 
 def test_unauthenticated_dashboard_redirects_to_login(client):

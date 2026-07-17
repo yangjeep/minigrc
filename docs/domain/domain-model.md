@@ -91,6 +91,8 @@ AuditEvent      (standalone log, references other entities by id + type)
 | Vendor user roster snapshot | Append-only, immutable capture of a vendor's reported user list at one point in time | Yes — `VendorUserSnapshot` / `VendorUserSnapshotRow` |
 | Google Drive connection | One org-level, admin-managed, encrypted-at-rest OAuth connection used to read Drive file metadata/content | Yes — `GoogleDriveConnection` |
 | Policy approval snapshot | Append-only mirror of one Google Drive Approvals API record for a PolicyVersion — optional, best-effort | Yes — `PolicyApprovalSnapshot` |
+| AWS connection | Configuration (account label, expected account ID, optional AssumeRole ARN + encrypted external ID, regions) for one AWS account this app collects evidence from | Yes — `AwsConnection` |
+| Evidence snapshot | Immutable, point-in-time capture of evidence from an external source (AWS CloudTrail/IAM today), mappable to requirements/controls | Yes — `EvidenceSnapshot` (+ `EvidenceRequirementMapping`/`EvidenceControlMapping`) |
 
 ## Why some entities were deferred
 

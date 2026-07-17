@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}AWS · minigrc{% endblock %}
+{% block content %}
+<h1>AWS connector</h1>
+<p class="lede">CloudTrail logging posture and basic IAM hygiene evidence — not a CSPM. Uses the standard
+AWS credential provider chain (ambient workload credentials preferred), with optional AssumeRole. This app
+never stores long-lived AWS access keys.</p>
+
+{% if not connection %}
+<p>Not configured.</p>
+{% if request.state.user.role == "admin" %}
+<p><a href="/connectors/aws/edit">Configure AWS connection</a></p>
+{% endif %}
+{% else %}
+<dl>
+  <dt>Account label</dt><dd>{{ connection.account_label }}</dd>
+  <dt>Expected account ID</dt><dd>{{ connection.expected_account_id or "—" }}</dd>
+  <dt>Role ARN</dt><dd>{{ connection.role_arn or "(ambient credentials)" }}</dd>
+  <dt>Regions</dt><dd>{{ connection.regions }}</dd>
+  <dt>Configured by</dt><dd>{{ connection.configured_by.email }}</dd>
+  <dt>Last check</dt><dd>{{ connection.last_check_at or "Never" }}</dd>
+  {% if connection.last_error_summary %}
+  <dt>Last error</dt><dd>{{ connection.last_error_summary }}</dd>
+  {% endif %}
+</dl>
+{% if request.state.user.role == "admin" %}
+<p><a href="/connectors/aws/edit">Edit settings</a></p>
+<form method="post" action="/connectors/aws/test" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit">Test connection</button>
+</form>
+<form method="post" action="/connectors/aws/run-checks" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit">Run checks now</button>
+</form>
+{% endif %}
+<p><a href="/evidence?source_type=aws_cloudtrail">CloudTrail evidence</a> ·
+   <a href="/evidence?source_type=aws_iam">IAM evidence</a></p>
+{% endif %}
+{% endblock %}

@@ -602,6 +602,106 @@ class GoogleDriveConnection(Base):
     revoked_by: Mapped[User | None] = relationship(foreign_keys=[revoked_by_user_id])
 
 
+class AwsConnection(Base):
+    """Configuration for one AWS account this app collects evidence from.
+
+    Never stores long-lived AWS access keys — only an optional role ARN
+    for `AssumeRole` (ambient workload credentials are used otherwise).
+    `external_id` is encrypted at rest (see app/crypto.py) since it's a
+    piece of the assume-role trust boundary, even though it isn't a
+    bearer credential the way an access key would be. Unlike
+    `GoogleDriveConnection`, this is plain configuration (no OAuth grant
+    lifecycle), so it's updated in place — audited like any other
+    settings change, not append-only.
+    """
+
+    __tablename__ = "aws_connections"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    account_label: Mapped[str] = mapped_column(String(255), nullable=False)
+    expected_account_id: Mapped[str] = mapped_column(String(32), default="")
+    role_arn: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    encrypted_external_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    regions: Mapped[str] = mapped_column(String(512), default="us-east-1")
+    configured_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    last_check_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error_summary: Mapped[str] = mapped_column(Text, default="")
+
+    configured_by: Mapped[User] = relationship()
+
+
+EVIDENCE_STATUSES = ("pass", "fail", "warning", "unknown")
+
+
+class EvidenceSnapshot(Base):
+    """An immutable, point-in-time capture of evidence from an external
+    source (AWS CloudTrail/IAM today; Google Drive/Workspace could feed
+    this table too later). No edit/delete route exists — a correction is
+    always a new snapshot, never a mutation. `normalized_payload_json` is
+    a bounded, secret-free summary (never raw credentials, tokens, or full
+    API responses); `raw_payload_sha256` lets an auditor confirm this
+    snapshot corresponds to a specific underlying collection without this
+    app needing to retain the raw payload itself.
+    """
+
+    __tablename__ = "evidence_snapshots"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_connection_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    check_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, default="")
+    collected_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    collector_version: Mapped[str] = mapped_column(String(32), default="1")
+    normalized_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    raw_payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+    requirement_mappings: Mapped[list[EvidenceRequirementMapping]] = relationship(
+        back_populates="evidence_snapshot", cascade="all, delete-orphan"
+    )
+    control_mappings: Mapped[list[EvidenceControlMapping]] = relationship(
+        back_populates="evidence_snapshot", cascade="all, delete-orphan"
+    )
+
+
+class EvidenceRequirementMapping(Base):
+    """Join table: which evidence snapshot supports which framework requirement."""
+
+    __tablename__ = "evidence_requirement_mappings"
+    __table_args__ = (
+        UniqueConstraint("evidence_snapshot_id", "requirement_id", name="uq_evidence_requirement"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    evidence_snapshot_id: Mapped[str] = mapped_column(ForeignKey("evidence_snapshots.id"), nullable=False)
+    requirement_id: Mapped[str] = mapped_column(ForeignKey("framework_requirements.id"), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+    evidence_snapshot: Mapped[EvidenceSnapshot] = relationship(back_populates="requirement_mappings")
+    requirement: Mapped[FrameworkRequirement] = relationship()
+
+
+class EvidenceControlMapping(Base):
+    """Join table: which evidence snapshot supports which internal control."""
+
+    __tablename__ = "evidence_control_mappings"
+    __table_args__ = (UniqueConstraint("evidence_snapshot_id", "control_id", name="uq_evidence_control"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    evidence_snapshot_id: Mapped[str] = mapped_column(ForeignKey("evidence_snapshots.id"), nullable=False)
+    control_id: Mapped[str] = mapped_column(ForeignKey("internal_controls.id"), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+    evidence_snapshot: Mapped[EvidenceSnapshot] = relationship(back_populates="control_mappings")
+    control: Mapped[InternalControl] = relationship()
+
+
 class AuditEvent(Base):
     """Append-only record of who changed what, for auditor-facing history.
 
