@@ -230,3 +230,31 @@ imported roster is worse than a rejected one. Linking an imported row to a
 `Person` (admin-only) only ever sets `matched_person_id`; the imported
 columns stay exactly as reported, so the evidentiary record and the
 organization's interpretation of it stay separately auditable.
+
+## 16. Google OIDC login is separate from local login, not a replacement
+
+**Decision:** `app/google_oidc.py` + `app/routers/google_oidc.py` add
+`/auth/google/login` and `/auth/google/callback`, disabled (404) unless
+`GRC_GOOGLE_OIDC_CLIENT_ID`/`GRC_GOOGLE_OIDC_CLIENT_SECRET`/
+`GRC_PUBLIC_BASE_URL` are all configured. Local email/password login
+(`app/routers/auth.py`) is untouched and remains fully usable regardless —
+explicit break-glass access if Google sign-in is ever unavailable or
+misconfigured. Session issuance itself (`start_user_session`, extracted
+from `auth.py`) is shared between both paths; only how a `User` is
+identified differs.
+
+**Rationale:** This is deliberately *not* a "replace local auth with SSO"
+change — see CLAUDE.md's break-glass requirement. `google.oauth2.
+id_token.verify_oauth2_token` handles signature/issuer/audience/expiry
+against Google's current signing keys; this app is responsible for nonce
+(replay protection across the redirect), `email_verified`, and hosted-
+domain (`hd`) checks, since the email suffix alone is not proof of
+Workspace membership — `hd` is a verified claim inside the signed token,
+the domain of `email` is not. A first-time Google sign-in creates a local
+`User` row (linked to an existing `Person` by normalized email if one
+exists) rather than requiring a separate SSO-account model — this app
+still has exactly one `User` table regardless of how a session started.
+
+**Non-goal:** SAML. OIDC covers Google Workspace sign-in with drastically
+less protocol surface (no XML signing, no metadata exchange, no ACS
+endpoint) for the one identity provider this app is scoped to support.

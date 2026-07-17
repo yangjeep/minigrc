@@ -43,7 +43,7 @@ without duplicating tools that already do their job well.
 
 | Area | Status (this PR) | Source of truth |
 |------|-------------------|------------------|
-| Authentication | Implemented — local email/password, server-side sessions | Internal (this app) |
+| Authentication | Implemented — local email/password, server-side sessions, optional Google OIDC login | Internal (this app), identity optionally asserted by Google |
 | Frameworks / Requirements | Implemented — checklist, manual add, CSV import | Internal (this app), seeded with placeholder content |
 | Requirement assessments & notes | Implemented — applicable/state/owner, append-only notes, audit history | Internal (this app) |
 | Policies | Implemented — versioned PDF/DOCX repository, review dates | Internal (this app) |
