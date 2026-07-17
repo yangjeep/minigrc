@@ -49,13 +49,14 @@ without duplicating tools that already do their job well.
 | Policies | Implemented — versioned PDF/DOCX repository, review dates, optional Google Drive source association + capture + approval history | Internal (this app), optionally sourced from Google Drive |
 | Internal Controls | Implemented — list, detail, map to requirements | Internal (this app) |
 | Risks | Implemented — structured register, validated bounds | Internal (this app) |
+| Evidence | Implemented — immutable snapshots, maps to requirements/controls | Internal (this app), sourced from AWS today |
+| AWS connector | Implemented — CloudTrail logging posture + basic IAM hygiene evidence, not a CSPM | External — AWS (ambient credentials or AssumeRole; never stores long-lived keys) |
 | Audit Log | Implemented — real event history | Internal (this app) |
 | People directory | Implemented — manual entries; optional Google Workspace Directory sync | Internal (this app), optionally synced from Google Workspace |
 | Vendor/System register | Implemented — one record per purchased/used system, operational flags, renewals view | Internal (this app) |
 | Vendor roster snapshots | Implemented — append-only CSV import per vendor, delta view, Person matching, admin-only linking | Internal (this app), sourced from the vendor's own export |
-| Evidence | Placeholder page only | Internal metadata (future); large files in object storage (future) |
 | Actions (corrective actions / exceptions) | Placeholder page only | External — Asana |
-| Connectors (GitHub, AWS, Azure, Google Workspace, Asana) | Placeholder page only | External systems; this app will store results |
+| Connectors (GitHub, Azure, Asana) | Placeholder page only | External systems; this app will store results |
 | Trust Center | Placeholder page only | Internal — curated subset of this app's data |
 | Vulnerabilities | Out of scope, intentionally | External — Aikido |
 
@@ -99,16 +100,19 @@ archival storage.
 
 ## Next PR candidates
 
-In rough priority order, based on what this MVP makes buildable next:
-1. Evidence metadata + snapshot model, linked to a control or requirement.
-2. First real connector (most likely GitHub, since it's the lowest-friction
-   API to authenticate against) using the plain "connection test + checks +
-   evidence output" module shape described in `CLAUDE.md`.
-3. Risk treatment as a distinct workflow (currently a free-text field on
+`feat/startup-compliance-operations` delivered evidence metadata + AWS
+CloudTrail/IAM as the first real connector, Google Drive/OIDC/Workspace
+Directory, admin authorization, People, and the Vendor/System register —
+see that branch's worklog entries and ADRs #12–#20 for what shipped and
+why. Remaining candidates, in rough priority order:
+
+1. A second real connector (GitHub is still the lowest-friction next
+   API), using the same "connection test + checks + evidence output"
+   module shape as `app/aws_connector.py`.
+2. Risk treatment as a distinct workflow (currently a free-text field on
    `Risk`) once a second risk-adjacent workflow (exceptions) makes the
    shared shape clear.
-4. Role-based permissions, once there is a second concrete need for two
-   users to have different access (this MVP treats all authenticated users
-   identically).
-5. Object storage for policy files, once local-disk storage is a real
+3. Object storage for policy files, once local-disk storage is a real
    constraint (multi-instance deployment, large file volume).
+4. A route for a Google-created user (via OIDC) to set a local password,
+   if break-glass access without Google is needed for that account.

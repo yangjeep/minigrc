@@ -24,8 +24,10 @@ from app.logging_config import configure_logging
 from app.routers import (
     audit_log,
     auth,
+    aws_connector,
     controls,
     dashboard,
+    evidence,
     frameworks,
     google_drive,
     google_oidc,
@@ -123,6 +125,8 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
     app.include_router(people.router)
     app.include_router(vendor_systems.router)
     app.include_router(google_drive.router)
+    app.include_router(aws_connector.router)
+    app.include_router(evidence.router)
     app.include_router(audit_log.router)
     # placeholders.router registers a catch-all "/{slug}" — it must be
     # included last so it never shadows a more specific route above.

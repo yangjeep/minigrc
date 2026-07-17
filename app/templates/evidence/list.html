@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Evidence · minigrc{% endblock %}
+{% block content %}
+<h1>Evidence</h1>
+<p class="lede">Immutable, point-in-time snapshots from connected systems. Corrections are new snapshots,
+never edits.</p>
+
+<form method="get" action="/evidence" class="filters">
+  <select name="source_type">
+    <option value="">Any source</option>
+    {% for s in source_types %}
+    <option value="{{ s }}" {% if selected_source_type==s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <select name="status">
+    <option value="">Any status</option>
+    {% for s in statuses %}
+    <option value="{{ s }}" {% if selected_status==s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Filter</button>
+</form>
+
+<table>
+  <thead>
+    <tr><th>Title</th><th>Source</th><th>Status</th><th>Summary</th><th>Collected</th></tr>
+  </thead>
+  <tbody>
+    {% for snap in snapshots %}
+    <tr>
+      <td><a href="/evidence/{{ snap.id }}">{{ snap.title }}</a></td>
+      <td>{{ snap.source_type }}</td>
+      <td><span class="badge badge-{{ snap.status }}">{{ snap.status }}</span></td>
+      <td>{{ snap.summary }}</td>
+      <td>{{ snap.collected_at }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5">No evidence collected yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

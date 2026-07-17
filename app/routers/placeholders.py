@@ -14,16 +14,6 @@ from app.deps import require_login
 router = APIRouter(dependencies=[Depends(require_login)])
 
 PLACEHOLDERS = {
-    "evidence": {
-        "title": "Evidence",
-        "status": "Not implemented.",
-        "responsibility": (
-            "This app will store evidence metadata and point-in-time snapshots "
-            "(e.g. a screenshot or export proving a control ran), not the raw large "
-            "files themselves — those will live in object storage in a future PR."
-        ),
-        "source_of_truth": "Internal (metadata) once built; large files in future object storage",
-    },
     "actions": {
         "title": "Actions",
         "status": "Not implemented. Asana remains the source of truth.",
@@ -36,7 +26,8 @@ PLACEHOLDERS = {
         "title": "Connectors",
         "status": "Google Drive (policy sources + approvals) implemented — see /connectors/google-drive. "
         "Optional Google Workspace Directory sync implemented — see People. "
-        "GitHub/Azure/AWS/Asana connectors not built in this PR.",
+        "AWS CloudTrail/IAM evidence implemented — see /connectors/aws and Evidence. "
+        "GitHub/Azure/Asana connectors not built in this PR.",
         "responsibility": (
             "Each connector is a small module with a connection test, supported checks, and "
             "evidence output — built one at a time, not a generic connector SDK."
