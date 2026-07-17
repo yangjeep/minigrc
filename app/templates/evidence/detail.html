@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}{{ snapshot.title }} · minigrc{% endblock %}
+{% block content %}
+<h1>{{ snapshot.title }}</h1>
+<dl>
+  <dt>Source</dt><dd>{{ snapshot.source_type }} ({{ snapshot.check_key }})</dd>
+  <dt>Status</dt><dd><span class="badge badge-{{ snapshot.status }}">{{ snapshot.status }}</span></dd>
+  <dt>Summary</dt><dd>{{ snapshot.summary }}</dd>
+  <dt>Collected</dt><dd>{{ snapshot.collected_at }}</dd>
+  <dt>Collector version</dt><dd>{{ snapshot.collector_version }}</dd>
+  <dt>Raw payload hash</dt><dd><code>{{ snapshot.raw_payload_sha256 }}</code></dd>
+</dl>
+
+<h2>Normalized payload</h2>
+<pre>{{ snapshot.normalized_payload_json }}</pre>
+
+<h2>Mapped requirements</h2>
+<ul>
+  {% for m in snapshot.requirement_mappings %}
+  <li><a href="/frameworks/{{ m.requirement.framework_id }}/requirements/{{ m.requirement_id }}">{{ m.requirement.reference_code }} — {{ m.requirement.title }}</a></li>
+  {% else %}
+  <li>None mapped.</li>
+  {% endfor %}
+</ul>
+<form method="post" action="/evidence/{{ snapshot.id }}/map-requirement">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <select name="requirement_id">
+    {% for r in available_requirements %}
+    <option value="{{ r.id }}">{{ r.reference_code }} — {{ r.title }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Map requirement</button>
+</form>
+
+<h2>Mapped controls</h2>
+<ul>
+  {% for m in snapshot.control_mappings %}
+  <li><a href="/controls/{{ m.control_id }}">{{ m.control.name }}</a></li>
+  {% else %}
+  <li>None mapped.</li>
+  {% endfor %}
+</ul>
+<form method="post" action="/evidence/{{ snapshot.id }}/map-control">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <select name="control_id">
+    {% for c in available_controls %}
+    <option value="{{ c.id }}">{{ c.name }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Map control</button>
+</form>
+{% endblock %}

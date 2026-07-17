@@ -358,3 +358,47 @@ optional and separately toggleable. If the scope isn't granted (not
 enabled, or an admin declined it at consent), `Person` records stay fully
 manual — nothing in `app/routers/people.py` depends on this sync having
 ever run.
+
+## 21. AWS evidence is two fixed check families, not a CSPM
+
+**Decision:** `app/aws_connector.py` implements exactly two checks —
+`check_cloudtrail` (at least one actively-logging trail; multi-region,
+global-service-events, and log-file-validation as warnings, not
+failures) and `check_iam` (root MFA/access keys, account password
+policy presence, per-user MFA and access-key age) — using the standard
+AWS credential provider chain with optional `AssumeRole`. No GuardDuty,
+Security Hub, Config, S3/RDS/EBS posture, or general resource scanning.
+A failed API call (`ClientError`/`BotoCoreError`) always produces
+`status="unknown"`, never `"fail"` — this app cannot distinguish "the
+control is broken" from "I don't have permission to check it," and
+conflating the two would misrepresent posture to an auditor.
+
+**Rationale:** The spec for this branch is explicit that this is "not a
+CSPM" — CloudTrail logging posture and basic IAM hygiene are the two
+check families named. `AwsConnection` never stores a long-lived AWS
+access key (only an optional `role_arn` + encrypted `external_id` for
+`AssumeRole`); ambient workload credentials are the default path,
+matching how this app would actually run (ECS/EC2/Lambda instance role)
+rather than requiring an operator to mint and rotate static keys just to
+run evidence checks.
+
+## 22. EvidenceSnapshot is a single shared, immutable table across sources
+
+**Decision:** `app/models.py::EvidenceSnapshot` (with
+`EvidenceRequirementMapping`/`EvidenceControlMapping` join tables) is the
+one evidence table both AWS checks and any future evidence source write
+to — no per-source evidence table. No edit/delete route exists; a
+correction is always a new snapshot. `normalized_payload_json` is bounded
+(20,000 characters) and never contains a raw credential; a
+`raw_payload_sha256` lets an auditor confirm a snapshot's integrity
+without this app needing to retain a full raw API response.
+
+**Rationale:** The spec explicitly names `EvidenceSnapshot` as "a small
+shared model...allowed because both Google and AWS will produce
+evidence" — this is the one deliberate exception to "no generic
+abstraction without a second caller" in this branch, called out because
+two concrete sources (Drive approvals took its own dedicated
+`PolicyApprovalSnapshot` table instead, since it's structurally
+different: revision-scoped, policy-specific evidence vs. this table's
+point-in-time infrastructure posture checks) genuinely need the same
+immutable-snapshot-with-mappings shape.

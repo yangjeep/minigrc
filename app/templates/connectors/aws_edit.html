@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Configure AWS · minigrc{% endblock %}
+{% block content %}
+<h1>Configure AWS connection</h1>
+<form method="post" action="/connectors/aws">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Account label <input type="text" name="account_label" required value="{{ connection.account_label if connection else '' }}"></label>
+  <label>Expected account ID <input type="text" name="expected_account_id" value="{{ connection.expected_account_id if connection else '' }}"></label>
+  <label>Role ARN (optional — leave blank to use ambient workload credentials)
+    <input type="text" name="role_arn" value="{{ connection.role_arn if connection and connection.role_arn else '' }}">
+  </label>
+  <label>External ID (optional, sensitive — leave blank to keep the existing value)
+    <input type="password" name="external_id" autocomplete="off">
+  </label>
+  <label>Regions (comma-separated) <input type="text" name="regions" value="{{ connection.regions if connection else 'us-east-1' }}"></label>
+  <button type="submit">Save</button>
+</form>
+{% endblock %}
