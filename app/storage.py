@@ -5,6 +5,11 @@ written to a temporary file inside GRC_DATA_DIR/tmp, validated by content
 (not just extension), then atomically moved into
 GRC_DATA_DIR/policies/<policy id>/<version number>/document.<ext> — a path
 built entirely from server-generated ids, never the original filename.
+
+Both entry points (`save_policy_version_upload` for a browser upload,
+`save_policy_version_from_bytes` for Drive-captured content) share the same
+write/validate/store core (`_save_policy_version`) — the only difference is
+where the byte chunks come from.
 """
 
 from __future__ import annotations
@@ -13,6 +18,7 @@ import hashlib
 import os
 import re
 import zipfile
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
 from fastapi import UploadFile
@@ -72,24 +78,32 @@ def _validate_content(path: str, extension: str) -> None:
         raise UploadValidationError("File does not look like a valid DOCX document.")
 
 
-def save_policy_version_upload(
-    upload: UploadFile,
+def _iter_upload_chunks(upload: UploadFile) -> Iterator[bytes]:
+    while chunk := upload.file.read(_CHUNK_SIZE):
+        yield chunk
+
+
+def _iter_bytes_chunks(raw_bytes: bytes) -> Iterator[bytes]:
+    for offset in range(0, len(raw_bytes), _CHUNK_SIZE):
+        yield raw_bytes[offset : offset + _CHUNK_SIZE]
+
+
+def _save_policy_version(
+    chunks: Iterable[bytes],
     *,
+    original_filename: str,
+    extension: str,
     data_dir: str,
     policy_id: str,
     version_number: int,
     max_bytes: int,
 ) -> StoredUpload:
-    """Validate and durably store one policy version upload.
+    """Write chunks to a temp file while hashing/bounding, validate content,
+    then atomically move into the immutable version directory.
 
-    Raises UploadValidationError for any rejected upload; the temp file is
+    Raises UploadValidationError for any rejected content; the temp file is
     always cleaned up before this function returns or raises.
     """
-    original_filename = sanitize_original_filename(upload.filename or "")
-    extension = _extension_of(original_filename)
-    if extension not in ALLOWED_EXTENSIONS:
-        raise UploadValidationError("Only PDF and DOCX files are accepted.")
-
     tmp_dir = os.path.join(data_dir, "tmp")
     os.makedirs(tmp_dir, exist_ok=True)
     tmp_path = os.path.join(tmp_dir, f"upload-{os.urandom(16).hex()}.part")
@@ -98,7 +112,7 @@ def save_policy_version_upload(
     byte_size = 0
     try:
         with open(tmp_path, "wb") as tmp_file:
-            while chunk := upload.file.read(_CHUNK_SIZE):
+            for chunk in chunks:
                 byte_size += len(chunk)
                 if byte_size > max_bytes:
                     raise UploadValidationError(
@@ -129,6 +143,58 @@ def save_policy_version_upload(
         byte_size=byte_size,
         sha256=sha256.hexdigest(),
         original_filename=original_filename,
+    )
+
+
+def save_policy_version_upload(
+    upload: UploadFile,
+    *,
+    data_dir: str,
+    policy_id: str,
+    version_number: int,
+    max_bytes: int,
+) -> StoredUpload:
+    """Validate and durably store one policy version from a browser upload."""
+    original_filename = sanitize_original_filename(upload.filename or "")
+    extension = _extension_of(original_filename)
+    if extension not in ALLOWED_EXTENSIONS:
+        raise UploadValidationError("Only PDF and DOCX files are accepted.")
+
+    return _save_policy_version(
+        _iter_upload_chunks(upload),
+        original_filename=original_filename,
+        extension=extension,
+        data_dir=data_dir,
+        policy_id=policy_id,
+        version_number=version_number,
+        max_bytes=max_bytes,
+    )
+
+
+def save_policy_version_from_bytes(
+    raw_bytes: bytes,
+    *,
+    original_filename: str,
+    data_dir: str,
+    policy_id: str,
+    version_number: int,
+    max_bytes: int,
+) -> StoredUpload:
+    """Validate and durably store one policy version from in-memory bytes
+    (e.g. content downloaded/exported from Google Drive)."""
+    original_filename = sanitize_original_filename(original_filename)
+    extension = _extension_of(original_filename)
+    if extension not in ALLOWED_EXTENSIONS:
+        raise UploadValidationError("Only PDF and DOCX files are accepted.")
+
+    return _save_policy_version(
+        _iter_bytes_chunks(raw_bytes),
+        original_filename=original_filename,
+        extension=extension,
+        data_dir=data_dir,
+        policy_id=policy_id,
+        version_number=version_number,
+        max_bytes=max_bytes,
     )
 
 
