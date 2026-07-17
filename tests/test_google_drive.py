@@ -19,7 +19,7 @@ TEST_KEY = Fernet.generate_key().decode()
 
 DRIVE_SETTINGS = {
     "google_drive_client_id": "drive-client-id",
-    "google_drive_client_secret": "drive-client-secret",
+    "google_drive_client_secret": "oauth-client-fixture-value",
     "public_base_url": "https://grc.example.com",
     "encryption_key": TEST_KEY,
 }
@@ -35,7 +35,7 @@ def _seed_active_connection(app, admin_user) -> str:
         connection = GoogleDriveConnection(
             connected_by_user_id=admin_user.id,
             granted_scopes="https://www.googleapis.com/auth/drive.readonly",
-            encrypted_refresh_token=encrypt("fake-refresh-token", key=TEST_KEY),
+            encrypted_refresh_token=encrypt("opaque-refresh-token-fixture", key=TEST_KEY),
         )
         session.add(connection)
         session.commit()
@@ -58,9 +58,9 @@ def _create_policy(client) -> str:
 
 
 def test_encrypt_decrypt_roundtrip():
-    ciphertext = encrypt("super-secret-refresh-token", key=TEST_KEY)
-    assert ciphertext != "super-secret-refresh-token"
-    assert decrypt(ciphertext, key=TEST_KEY) == "super-secret-refresh-token"
+    ciphertext = encrypt("roundtrip-token-fixture", key=TEST_KEY)
+    assert ciphertext != "roundtrip-token-fixture"
+    assert decrypt(ciphertext, key=TEST_KEY) == "roundtrip-token-fixture"
 
 
 def test_encrypt_without_key_configured_raises():
