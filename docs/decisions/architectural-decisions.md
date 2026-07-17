@@ -177,3 +177,36 @@ exists.
 **Supersedes:** The "no RBAC" portion of decision #8 for credential/admin
 surfaces specifically; GRC data access remains identical for every
 authenticated user.
+
+## 13. VendorSystem is one model, not separate Vendor/Application tables
+
+**Decision:** `app/models.py::VendorSystem` represents one purchased/used
+system end to end — identity, access continuity, cost, contract/renewal,
+support — rather than a `Vendor` row plus a separate `Application` row
+joined together.
+
+**Rationale:** This branch's product boundary explicitly treats "GitHub",
+"Slack", "AWS" as single real-world things a startup tracks, not a vendor
+entity distinct from an application entity with its own lifecycle. Splitting
+them would be exactly the kind of generic abstraction `CLAUDE.md` asks
+agents to avoid until a second concrete need (e.g. one vendor selling
+multiple distinct applications this org uses separately) actually appears.
+Operational warnings (missing admin, contract missing, renewal approaching,
+etc.) are computed in `app/vendor_flags.py` from live data at request time,
+not stored — a stored flag would just be a cache that could drift stale.
+
+## 14. Person is a shared identity table, not per-feature user references
+
+**Decision:** `app/models.py::Person` is one row per human, optionally
+referenced by `User.person_id`, `VendorSystem`'s admin/owner fields, and
+(in a later commit on this branch) vendor roster snapshot rows — instead of
+each feature area inventing its own "who is this" reference.
+
+**Rationale:** Multiple upcoming features (vendor admin tracking, roster
+import matching, optional Workspace Directory sync) all need to answer "is
+this email a current employee?" A single shared table with an
+`employment_status` answers that once. `employment_status` starts
+`"unknown"`, not `"active"` — nothing has confirmed it until an explicit
+source (manual edit or a directory sync) says so, and it's never inferred
+or deleted from a missing sync record, only updated by explicit source
+data — preserving history rather than guessing.

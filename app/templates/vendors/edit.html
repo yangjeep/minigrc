@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% import "vendors/_form.html" as forms %}
+{% block title %}Edit {{ vendor.system_name }} · minigrc{% endblock %}
+{% block content %}
+<h1>Edit {{ vendor.system_name }}</h1>
+<form method="post" action="/vendors/{{ vendor.id }}/edit">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  {{ forms.vendor_fields(vendor, lifecycle_statuses, billing_frequencies, tri_state_values, people) }}
+  <button type="submit">Save</button>
+</form>
+{% endblock %}

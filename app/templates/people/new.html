@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Add person · minigrc{% endblock %}
+{% block content %}
+<h1>Add person</h1>
+<form method="post" action="/people">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Email <input type="email" name="email" required></label>
+  <label>Display name <input type="text" name="display_name"></label>
+  <label>Employment status
+    <select name="employment_status">
+      {% for s in employment_statuses %}
+      <option value="{{ s }}" {% if s=="unknown" %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Add person</button>
+</form>
+{% endblock %}

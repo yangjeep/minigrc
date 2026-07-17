@@ -86,6 +86,9 @@ AuditEvent      (standalone log, references other entities by id + type)
 | Exception | A time-boxed deviation from a control/policy | Not modeled yet |
 | Corrective action | Work item remediating a finding | Not modeled yet — Asana is the source of truth |
 | Audit event | Who changed what, when, for auditor-facing history | Yes — `AuditEvent` |
+| Person | Shared identity reference (vendor admins, roster rows, MiniGRC users, Workspace Directory sync) | Yes — `Person` |
+| Vendor/System | One system the org purchases or uses (GitHub, Slack, AWS, ...) — identity, access continuity, cost, contract/renewal, support | Yes — `VendorSystem` |
+| Vendor user roster snapshot | Append-only, immutable capture of a vendor's reported user list at one point in time | Not modeled yet — next on `feat/startup-compliance-operations` |
 
 ## Why some entities were deferred
 

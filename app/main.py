@@ -21,7 +21,18 @@ from fastapi.templating import Jinja2Templates
 from app.config import get_settings
 from app.db import build_engine, init_db, make_session_factory, session_scope
 from app.logging_config import configure_logging
-from app.routers import audit_log, auth, controls, dashboard, frameworks, placeholders, policies, risks
+from app.routers import (
+    audit_log,
+    auth,
+    controls,
+    dashboard,
+    frameworks,
+    people,
+    placeholders,
+    policies,
+    risks,
+    vendor_systems,
+)
 from app.security import CSRF_COOKIE_NAME, new_csrf_token
 from app.seed import seed_if_empty
 
@@ -36,6 +47,8 @@ NAV_ITEMS = [
     ("Policies", "/policies"),
     ("Evidence", "/evidence"),
     ("Risks", "/risks"),
+    ("People", "/people"),
+    ("Vendors", "/vendors"),
     ("Actions", "/actions"),
     ("Connectors", "/connectors"),
     ("Trust Center", "/trust-center"),
@@ -104,6 +117,8 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
     app.include_router(controls.router)
     app.include_router(policies.router)
     app.include_router(risks.router)
+    app.include_router(people.router)
+    app.include_router(vendor_systems.router)
     app.include_router(audit_log.router)
     # placeholders.router registers a catch-all "/{slug}" — it must be
     # included last so it never shadows a more specific route above.
