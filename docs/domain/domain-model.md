@@ -45,8 +45,11 @@ transcription" decision.
 ## Entities and relationships
 
 ```
-Framework 1───* FrameworkRequirement
-                       │
+User 1───* UserSession
+
+Framework 1───* FrameworkRequirement 1───1 RequirementAssessment
+                       │        │
+                       │        └───* RequirementNote
                        │ *
                        ▼
               ControlRequirementMapping
@@ -55,21 +58,27 @@ Framework 1───* FrameworkRequirement
                        │
 InternalControl 1──────┘
 
+Policy 1───* PolicyVersion   (versions are immutable; never overwritten)
+
 Risk            (standalone register, no FK to controls yet)
 AuditEvent      (standalone log, references other entities by id + type)
 ```
 
 | Term | Definition used in this app | Modeled? |
 |------|------------------------------|----------|
+| User | A local login identity (email + password hash) | Yes — `User` |
+| User session | A server-side record of one logged-in browser session | Yes — `UserSession` |
 | Framework | A named compliance framework + version (e.g. "ISO/IEC 27001:2022") | Yes — `Framework` |
 | Framework requirement | One requirement/clause/control reference within a framework | Yes — `FrameworkRequirement` |
+| Requirement assessment | The organization's applicability/implementation-state/owner for one requirement | Yes — `RequirementAssessment` |
+| Requirement note | Append-only note explaining a requirement's status or a decision | Yes — `RequirementNote` |
 | Internal control | What the organization actually does to address one or more requirements | Yes — `InternalControl` |
 | Requirement-to-control mapping | Many-to-many link between a control and the requirements it satisfies | Yes — `ControlRequirementMapping` |
-| Control owner | Person/role accountable for a control | Yes — `InternalControl.owner` (plain string; no user/auth model yet) |
+| Control owner | Person/role accountable for a control | Yes — `InternalControl.owner` (plain string) |
 | Control status | Where a control stands: not_started / in_progress / implemented / needs_review | Yes — `InternalControl.status` |
 | Control review frequency | How often a control is expected to be reviewed | Yes — `InternalControl.review_frequency` |
-| Policy | A governance document (e.g. an information security policy) | Not modeled — Google Drive is the source of truth; see `docs/product-scope.md` |
-| Policy version | A specific revision of a policy document | Not modeled yet |
+| Policy | A governance document (e.g. an information security policy) | Yes — `Policy` |
+| Policy version | A specific, immutable revision of a policy document | Yes — `PolicyVersion` |
 | Evidence | Metadata proving a control operated (e.g. a screenshot, export, log excerpt) | Not modeled yet — placeholder page |
 | Evidence snapshot | A point-in-time capture of evidence | Not modeled yet |
 | Risk | A structured risk register entry: likelihood, impact, owner, status, treatment | Yes — `Risk` |
@@ -80,9 +89,6 @@ AuditEvent      (standalone log, references other entities by id + type)
 
 ## Why some entities were deferred
 
-- **Policy / Policy version**: Google Drive already versions documents;
-  duplicating that here before there's a real need to cross-reference
-  policy state with control state would be speculative.
 - **Evidence / Evidence snapshot**: needs an object-storage decision this
   PR intentionally punts on (see `docs/decisions/architectural-decisions.md`).
   Building the metadata table without a storage backend to point at would
@@ -93,6 +99,36 @@ AuditEvent      (standalone log, references other entities by id + type)
   exists to compare it against, risks guessing at a shape that won't fit.
   `Risk.treatment_plan` (free text) covers the PR's actual need: proving
   the risk register is usable.
+- **Policy / Policy version** were deferred in the original foundation PR
+  (Google Drive was treated as the source of truth) but are now modeled in
+  this PR — see `docs/product-scope.md` for why local, versioned storage
+  replaced the Drive-indexing plan.
+
+## Requirement assessment model
+
+`RequirementAssessment` is one-to-one with `FrameworkRequirement`, created
+alongside it (`app/requirements.py::add_requirement`) so a requirement is
+never in a state with no assessment row. Fields:
+
+- `applicable`: `"yes"` or `"no"`. Marking `"no"` requires a `RequirementNote`
+  explaining why, written in the same transaction as the assessment change.
+- `implementation_state`: `not_started` / `in_progress` / `implemented`.
+  Only meaningful when `applicable == "yes"`.
+- `owner`, `last_reviewed_at`, `last_reviewed_by`: free-text owner and an
+  optional "mark as reviewed" stamp, set from the assessment form.
+
+Completion percentage (`app/progress.py::compute_progress`) is
+`implemented applicable requirements / all applicable requirements`, with
+an explicit `None` ("N/A") result — not a divide-by-zero — when a framework
+has no applicable requirements yet.
+
+## Policy model
+
+`Policy` holds metadata (title, description, owner, status, effective/next
+review dates). `PolicyVersion` rows are immutable and monotonically
+numbered per policy (`UniqueConstraint(policy_id, version_number)`) — the
+application never updates or deletes a version, only adds new ones. See
+`docs/architecture.md` "Policy storage" for the upload/validation pipeline.
 
 ## Likelihood/impact scale
 

@@ -79,3 +79,77 @@ risk, mapping a control to a requirement).
 (e.g. internal housekeeping writes) and produce audit entries with
 computer-generated, not human-readable, detail text. Explicit calls keep
 the audit log meaningful to an auditor reading it directly.
+
+## 8. Local session authentication, not JWTs or a hosted identity provider
+
+**Decision:** `app/models.py::User`/`UserSession`, `app/security.py`,
+`app/deps.py::require_login`. Passwords hashed with `pwdlib[argon2]`.
+Sessions are opaque `secrets.token_urlsafe(32)` tokens; only a SHA-256 hash
+is stored server-side (`UserSession.token_hash`); the raw token lives only
+in an `HttpOnly`/`SameSite=Lax` cookie.
+
+**Rationale:** This app now handles potentially sensitive policy documents,
+so "no auth" (decision #6, superseded) is no longer acceptable. A JWT would
+either be stateless (can't revoke before expiry — wrong for logout) or need
+a server-side denylist anyway, at which point a plain session table is
+simpler and gives immediate revocation. A hosted identity provider (Clerk,
+Auth0, Firebase, WorkOS, Keycloak, Authentik) would add an external runtime
+dependency this self-hosted, single-organization tool doesn't need. All
+authenticated users share the same permissions in this MVP — no RBAC yet;
+revisit when a second concrete need for differentiated access exists.
+
+**Supersedes:** Decision #6 ("No authentication or multi-tenancy") — the
+multi-tenancy half of that decision still stands; the no-auth half does not.
+
+## 9. CSRF via a double-submit cookie, independent of the login session
+
+**Decision:** A `csrf_token` cookie is set for every request (even
+unauthenticated ones) by middleware in `app/main.py`. Every state-changing
+form includes a hidden `csrf_token` field; `app/deps.py::verify_csrf`
+compares the two with `secrets.compare_digest`.
+
+**Rationale:** Tying CSRF tokens to the login session would leave the login
+form itself unprotected (no session exists yet at that point). A cookie
+issued independent of login covers every form, including `/login`, with
+one mechanism. `SameSite=Lax` on both cookies already blocks most
+cross-site submission; the explicit token is defense in depth without
+needing a signing secret.
+
+## 10. Alembic migrations replace `Base.metadata.create_all`
+
+**Decision:** `app/db.py::init_db` runs `alembic upgrade head`
+programmatically (building an `alembic.config.Config` pointed at the
+resolved database URL) instead of `Base.metadata.create_all`. One
+migration (`migrations/versions/..._initial_mvp_schema.py`) represents the
+full MVP schema.
+
+**Rationale:** This PR turns the app from a throwaway skeleton into
+something meant to hold real, persistent data (policy documents, audit
+history). `create_all` cannot express a schema *change* against an
+existing database with data in it — the trigger named in decision #2 (“the
+first schema change after a real deployment has data in it”) is exactly
+what this PR is doing. Using `init_db()` as the single call site for both
+dev and Docker (via `python -m app.cli migrate`) keeps one
+schema-initialization path rather than two competing ones.
+
+**Supersedes:** Decision #2 ("No Alembic yet").
+
+## 11. Policies are stored as local, versioned files — not indexed from Drive
+
+**Decision:** `app/models.py::Policy`/`PolicyVersion`, `app/storage.py`.
+Uploaded PDF/DOCX files are validated by content (not just extension),
+written to a temp file while hashing, then atomically moved into
+`GRC_DATA_DIR/policies/<policy id>/<version number>/`. Versions are never
+overwritten or deleted by the application.
+
+**Rationale:** The product requirement is auditable version history — "the
+document an auditor reviewed is provably the same bytes as what's stored
+today." A Drive-reference model (decision #5's original policy placeholder)
+can't guarantee that, since the referenced document can change out from
+under the review record. Local disk is sufficient at this app's target
+scale (one organization); object storage is a reasonable future upgrade,
+not a requirement for this PR — see `docs/product-scope.md`.
+
+**Supersedes:** The policy portion of decision #5 ("Policies... are
+placeholder pages, not empty tables") — Evidence, Actions, Connectors, and
+Trust Center remain placeholders; Policies do not.

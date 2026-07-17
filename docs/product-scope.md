@@ -2,9 +2,11 @@
 
 ## What this is
 
-A lightweight, internal ISMS/GRC application for operating an ISO 27001
-program: tracking frameworks, internal controls, risks, and an audit trail
-in one place, without duplicating tools that already do their job well.
+A lightweight, self-hosted ISMS/GRC application for one organization
+operating one internal compliance program: a framework checklist with
+notes and history, a local policy repository with versioning, a structured
+risk register, internal controls, and an audit trail — in one place,
+without duplicating tools that already do their job well.
 
 ## Explicit non-goals
 
@@ -15,15 +17,23 @@ in one place, without duplicating tools that already do their job well.
 - **Not a vulnerability scanner.** Aikido owns vulnerability management.
   This app may eventually surface Aikido's output as evidence, but it will
   never run scans itself.
-- **Not an auth/identity system.** No login, sessions, roles, or
-  multi-tenancy in this phase. Single internal deployment, trusted network.
-- **Not a document editor.** Policies live in Google Drive; this app will
-  index/reference them, not replace Drive as the authoring tool.
+- **Not a multi-tenant platform.** One deployment operates one
+  organization's program. No org switching, no per-user roles beyond
+  "logged in or not" in this MVP.
+- **Not a hosted identity provider.** Login is local (email + password,
+  Argon2-hashed, server-side sessions). No SSO, no OAuth, no
+  self-registration — the first user is created via
+  `python -m app.cli create-user`.
+- **Not a document editor.** Policies are authored elsewhere (Word, Google
+  Docs, etc.) and uploaded here as finished PDF/DOCX files for versioned
+  storage and review tracking — this app never edits document content.
 - **Not a task tracker.** Corrective actions and exceptions link to Asana
   tasks; Asana remains the system of record for task state.
-- **Not an object store.** Evidence *metadata* and snapshots will live here
-  eventually; large evidence files will live in object storage in a future
-  PR, not in this app's SQLite file.
+- **Not an object store.** Policy documents are stored as local files under
+  `GRC_DATA_DIR/policies/`, not in cloud object storage — sufficient for
+  the single-instance, single-organization scale this app targets. Evidence
+  *metadata* may live here in a future PR; large evidence files would still
+  need an object-storage decision this PR does not make.
 - **Not a certifying body.** This software cannot grant ISO 27001
   certification. Certification is performed by an accredited external
   certification body; this app only helps an organization operate and
@@ -33,11 +43,13 @@ in one place, without duplicating tools that already do their job well.
 
 | Area | Status (this PR) | Source of truth |
 |------|-------------------|------------------|
-| Frameworks / Requirements | Implemented — list, detail | Internal (this app), seeded with placeholder content |
+| Authentication | Implemented — local email/password, server-side sessions | Internal (this app) |
+| Frameworks / Requirements | Implemented — checklist, manual add, CSV import | Internal (this app), seeded with placeholder content |
+| Requirement assessments & notes | Implemented — applicable/state/owner, append-only notes, audit history | Internal (this app) |
+| Policies | Implemented — versioned PDF/DOCX repository, review dates | Internal (this app) |
 | Internal Controls | Implemented — list, detail, map to requirements | Internal (this app) |
-| Risks | Implemented — structured register, list + create | Internal (this app) |
+| Risks | Implemented — structured register, validated bounds | Internal (this app) |
 | Audit Log | Implemented — real event history | Internal (this app) |
-| Policies | Placeholder page only | External — Google Drive |
 | Evidence | Placeholder page only | Internal metadata (future); large files in object storage (future) |
 | Actions (corrective actions / exceptions) | Placeholder page only | External — Asana |
 | Connectors (GitHub, AWS, Azure, Google Workspace, Asana) | Placeholder page only | External systems; this app will store results |
@@ -52,18 +64,36 @@ requirements (e.g. one policy-publication control can satisfy several
 Annex A organizational requirements), and the same requirement could
 eventually be satisfied by more than one control. That's a many-to-many
 relationship, modeled as `ControlRequirementMapping` — see
-`docs/domain/domain-model.md` for the full research behind this.
+`docs/domain/domain-model.md` for the full research behind this. A user is
+never forced to create an `InternalControl` just to check off a
+requirement — the `RequirementAssessment` (applicable/state/owner) is
+independent of any control mapping.
+
+## Why policies are stored locally, not indexed from Google Drive
+
+An earlier iteration of this app treated Google Drive as the source of
+truth for policies and only planned to index/reference documents by ID.
+This MVP instead stores uploaded PDF/DOCX files directly, because the
+product requirement is specifically **versioned, auditable storage with
+immutable history** (upload → review → new version → old versions still
+downloadable) — a plain external reference wouldn't give an auditor
+confidence that a "reviewed" version is the same bytes that were reviewed.
+Object storage (S3-compatible) is a reasonable future upgrade once this
+app needs to scale past local disk; it is out of scope for this PR (see
+`docs/decisions/architectural-decisions.md`).
 
 ## Next PR candidates
 
-In rough priority order, based on what this foundation makes buildable
-next:
-1. Evidence metadata + snapshot model, linked to a control.
+In rough priority order, based on what this MVP makes buildable next:
+1. Evidence metadata + snapshot model, linked to a control or requirement.
 2. First real connector (most likely GitHub, since it's the lowest-friction
    API to authenticate against) using the plain "connection test + checks +
    evidence output" module shape described in `CLAUDE.md`.
 3. Risk treatment as a distinct workflow (currently a free-text field on
    `Risk`) once a second risk-adjacent workflow (exceptions) makes the
    shared shape clear.
-4. Policy index referencing Google Drive documents by ID, with version/review
-   tracking layered on top rather than re-hosting documents.
+4. Role-based permissions, once there is a second concrete need for two
+   users to have different access (this MVP treats all authenticated users
+   identically).
+5. Object storage for policy files, once local-disk storage is a real
+   constraint (multi-instance deployment, large file volume).
