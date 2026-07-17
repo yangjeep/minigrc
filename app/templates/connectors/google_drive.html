@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Google Drive · minigrc{% endblock %}
+{% block content %}
+<h1>Google Drive connector</h1>
+<p class="lede">Read-only connection used to associate policies with Google Drive files and capture
+approved content as an immutable, versioned local snapshot. See a policy's detail page to link it to
+a Drive file.</p>
+
+{% if not configured %}
+<p>Not configured. Set <code>GRC_GOOGLE_DRIVE_CLIENT_ID</code>, <code>GRC_GOOGLE_DRIVE_CLIENT_SECRET</code>,
+<code>GRC_PUBLIC_BASE_URL</code>, and <code>GRC_ENCRYPTION_KEY</code> to enable this connector.</p>
+{% elif connection %}
+<dl>
+  <dt>Status</dt><dd><span class="badge badge-active">Connected</span></dd>
+  <dt>Connected by</dt><dd>{{ connection.connected_by.email }}</dd>
+  <dt>Connected at</dt><dd>{{ connection.connected_at }}</dd>
+  <dt>Granted scopes</dt><dd>{{ connection.granted_scopes }}</dd>
+  <dt>Last successful sync</dt><dd>{{ connection.last_successful_sync_at or "Never" }}</dd>
+</dl>
+{% if request.state.user.role == "admin" %}
+<form method="post" action="/connectors/google-drive/disconnect">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit" class="danger-button">Disconnect</button>
+</form>
+{% endif %}
+{% else %}
+<p>Not connected.</p>
+{% if request.state.user.role == "admin" %}
+<p><a href="/connectors/google-drive/connect">Connect Google Drive</a></p>
+{% else %}
+<p>An admin must connect Google Drive.</p>
+{% endif %}
+{% endif %}
+
+{% if history %}
+<h2>Connection history</h2>
+<table>
+  <thead><tr><th>Connected by</th><th>Connected at</th><th>Disconnected at</th><th>Disconnected by</th></tr></thead>
+  <tbody>
+    {% for entry in history %}
+    <tr>
+      <td>{{ entry.connected_by.email }}</td>
+      <td>{{ entry.connected_at }}</td>
+      <td>{{ entry.revoked_at or "—" }}</td>
+      <td>{{ entry.revoked_by.email if entry.revoked_by else "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

@@ -34,11 +34,11 @@ PLACEHOLDERS = {
     },
     "connectors": {
         "title": "Connectors",
-        "status": "Not implemented in this PR.",
+        "status": "Google Drive (policy sources) implemented — see /connectors/google-drive. "
+        "GitHub/Azure/AWS/Asana connectors not built in this PR.",
         "responsibility": (
-            "Future connectors (GitHub, AWS, Azure, Google Workspace, Asana) will each be a "
-            "small module with a connection test, supported checks, and evidence output — "
-            "built one at a time, starting from the first real connector, not a generic SDK."
+            "Each connector is a small module with a connection test, supported checks, and "
+            "evidence output — built one at a time, not a generic connector SDK."
         ),
         "source_of_truth": "External systems; this app stores results",
     },

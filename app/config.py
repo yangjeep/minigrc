@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     google_oidc_client_secret: str = ""
     google_oidc_allowed_domains: str = ""
 
+    # OAuth for the org-level Drive connection stays distinct from OIDC
+    # login above, even if an operator points both at the same Google
+    # Cloud project's client credentials.
+    google_drive_client_id: str = ""
+    google_drive_client_secret: str = ""
+
+    encryption_key: str = ""
+
     @property
     def resolved_database_path(self) -> str:
         return self.database_path or f"{self.data_dir.rstrip('/')}/grc.db"
@@ -48,6 +56,19 @@ class Settings(BaseSettings):
     @property
     def google_oidc_redirect_uri(self) -> str:
         return f"{self.public_base_url.rstrip('/')}/auth/google/callback"
+
+    @property
+    def google_drive_configured(self) -> bool:
+        return bool(
+            self.google_drive_client_id
+            and self.google_drive_client_secret
+            and self.public_base_url
+            and self.encryption_key
+        )
+
+    @property
+    def google_drive_redirect_uri(self) -> str:
+        return f"{self.public_base_url.rstrip('/')}/connectors/google-drive/callback"
 
 
 @lru_cache

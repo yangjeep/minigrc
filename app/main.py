@@ -27,6 +27,7 @@ from app.routers import (
     controls,
     dashboard,
     frameworks,
+    google_drive,
     google_oidc,
     people,
     placeholders,
@@ -121,6 +122,7 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
     app.include_router(risks.router)
     app.include_router(people.router)
     app.include_router(vendor_systems.router)
+    app.include_router(google_drive.router)
     app.include_router(audit_log.router)
     # placeholders.router registers a catch-all "/{slug}" — it must be
     # included last so it never shadows a more specific route above.
