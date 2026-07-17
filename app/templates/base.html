@@ -3,20 +3,33 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}playground-grc{% endblock %}</title>
+  <title>{% block title %}minigrc{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <div class="shell">
     <nav class="sidebar">
-      <div class="brand">playground-grc</div>
+      <div class="brand">minigrc</div>
       <ul>
         {% for label, href in nav_items %}
-        <li><a href="{{ href }}">{{ label }}</a></li>
+        <li><a href="{{ href }}" {% if request.url.path==href %}aria-current="page"{% endif %}>{{ label }}</a></li>
         {% endfor %}
       </ul>
+      {% if request.state.user is defined and request.state.user %}
+      <div class="sidebar-user">
+        <div class="sidebar-email">{{ request.state.user.email }}</div>
+        <form method="post" action="/logout">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+          <button type="submit" class="link-button">Sign out</button>
+        </form>
+      </div>
+      {% endif %}
     </nav>
     <main class="content">
+      {% set flash = request.query_params.get('flash') %}
+      {% if flash %}
+      <div class="flash flash-{{ request.query_params.get('flash_kind', 'success') }}" role="status">{{ flash }}</div>
+      {% endif %}
       {% block content %}{% endblock %}
     </main>
   </div>

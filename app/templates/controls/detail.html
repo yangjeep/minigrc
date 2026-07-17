@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ control.name }} · playground-grc{% endblock %}
+{% block title %}{{ control.name }} · minigrc{% endblock %}
 {% block content %}
 <p><a href="/controls">&larr; Controls</a></p>
 <h1>{{ control.name }}</h1>
@@ -31,6 +31,7 @@
 {% if available_requirements %}
 <h2>Map a requirement</h2>
 <form method="post" action="/controls/{{ control.id }}/mappings">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
   <select name="requirement_id" required>
     {% for requirement in available_requirements %}
     <option value="{{ requirement.id }}">{{ requirement.reference_code }} — {{ requirement.title }}</option>

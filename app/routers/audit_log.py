@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.deps import get_db
+from app.deps import get_db, require_login
 from app.models import AuditEvent
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_login)])
 
 
 @router.get("/audit-log")

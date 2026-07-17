@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Risks · playground-grc{% endblock %}
+{% block title %}Risks · minigrc{% endblock %}
 {% block content %}
 <h1>Risk Register</h1>
 <table>
@@ -25,6 +25,7 @@
 
 <h2>Add a risk</h2>
 <form method="post" action="/risks">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
   <label>Title <input type="text" name="title" required></label>
   <label>Description <textarea name="description"></textarea></label>
   <label>Category <input type="text" name="category" value="general"></label>

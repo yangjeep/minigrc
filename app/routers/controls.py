@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import RedirectResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
-from app.deps import get_db
+from app.deps import get_db, require_login, verify_csrf
+from app.flash import redirect_with_flash
 from app.models import ControlRequirementMapping, FrameworkRequirement, InternalControl
 
-router = APIRouter(prefix="/controls", tags=["controls"])
+router = APIRouter(prefix="/controls", tags=["controls"], dependencies=[Depends(require_login)])
 
 
 @router.get("")
@@ -40,9 +41,11 @@ def view_control(control_id: str, request: Request, db: Session = Depends(get_db
 
 @router.post("/{control_id}/mappings")
 def add_mapping(
+    request: Request,
     control_id: str,
     requirement_id: str = Form(...),
     db: Session = Depends(get_db),
+    _csrf: None = Depends(verify_csrf),
 ):
     control = db.get(InternalControl, control_id)
     requirement = db.get(FrameworkRequirement, requirement_id)
@@ -50,11 +53,20 @@ def add_mapping(
         raise HTTPException(status_code=404, detail="Control or requirement not found")
 
     db.add(ControlRequirementMapping(control_id=control.id, requirement_id=requirement.id))
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        return redirect_with_flash(
+            f"/controls/{control_id}", "That requirement is already mapped to this control.", kind="error"
+        )
+
     record_audit_event(
         db,
         entity_type="control",
         entity_id=control.id,
         action="map_requirement",
         detail=f"Mapped control '{control.name}' to requirement '{requirement.reference_code}'",
+        actor=request.state.user.email,
     )
-    return RedirectResponse(url=f"/controls/{control_id}", status_code=303)
+    return redirect_with_flash(f"/controls/{control_id}", "Requirement mapped.")

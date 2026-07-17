@@ -7,17 +7,13 @@ docs/product-scope.md for the reasoning behind each.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
-router = APIRouter()
+from app.deps import require_login
+
+router = APIRouter(dependencies=[Depends(require_login)])
 
 PLACEHOLDERS = {
-    "policies": {
-        "title": "Policies",
-        "status": "Not implemented. Google Drive remains the source of truth.",
-        "responsibility": "This app will eventually index policy documents and versions for review tracking.",
-        "source_of_truth": "External — Google Drive",
-    },
     "evidence": {
         "title": "Evidence",
         "status": "Not implemented.",

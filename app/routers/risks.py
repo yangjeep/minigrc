@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
-from app.deps import get_db
+from app.deps import get_db, require_login, verify_csrf
+from app.flash import redirect_with_flash
 from app.models import Risk
 
-router = APIRouter(prefix="/risks", tags=["risks"])
+router = APIRouter(prefix="/risks", tags=["risks"], dependencies=[Depends(require_login)])
 
 
 @router.get("")
@@ -21,6 +21,7 @@ def list_risks(request: Request, db: Session = Depends(get_db)):
 
 @router.post("")
 def create_risk(
+    request: Request,
     title: str = Form(...),
     description: str = Form(""),
     category: str = Form("general"),
@@ -29,7 +30,14 @@ def create_risk(
     owner: str = Form(""),
     treatment_plan: str = Form(""),
     db: Session = Depends(get_db),
+    _csrf: None = Depends(verify_csrf),
 ):
+    title = title.strip()
+    if not title:
+        return redirect_with_flash("/risks", "Title is required.", kind="error")
+    if not (1 <= likelihood <= 5) or not (1 <= impact <= 5):
+        return redirect_with_flash("/risks", "Likelihood and impact must be between 1 and 5.", kind="error")
+
     risk = Risk(
         title=title,
         description=description,
@@ -47,5 +55,6 @@ def create_risk(
         entity_id=risk.id,
         action="create",
         detail=f"Created risk '{risk.title}'",
+        actor=request.state.user.email,
     )
-    return RedirectResponse(url="/risks", status_code=303)
+    return redirect_with_flash("/risks", f"Risk '{risk.title}' created.")
