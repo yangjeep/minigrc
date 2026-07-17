@@ -122,10 +122,10 @@ a { color: var(--accent); }
   color: #333;
 }
 
-.badge-implemented, .badge-closed { background: #d9f2e3; color: #146c3d; }
-.badge-in_progress, .badge-mitigating { background: #fdf0cf; color: #8a5a00; }
-.badge-not_started, .badge-open { background: #fde3e3; color: #9c1c1c; }
-.badge-needs_review, .badge-accepted { background: #e3ecfd; color: #1c4e9c; }
+.badge-implemented, .badge-closed, .badge-active, .badge-yes { background: #d9f2e3; color: #146c3d; }
+.badge-in_progress, .badge-mitigating, .badge-trial, .badge-cancelling, .badge-warning { background: #fdf0cf; color: #8a5a00; }
+.badge-not_started, .badge-open, .badge-departed, .badge-cancelled, .badge-no { background: #fde3e3; color: #9c1c1c; }
+.badge-needs_review, .badge-accepted, .badge-suspended, .badge-unknown { background: #e3ecfd; color: #1c4e9c; }
 
 form {
   display: flex;

@@ -228,6 +228,128 @@ class Risk(Base):
 RISK_STATUSES = ("open", "mitigating", "accepted", "closed")
 
 
+EMPLOYMENT_STATUSES = ("active", "suspended", "departed", "unknown")
+PERSON_SOURCES = ("manual", "google_workspace", "csv")
+
+
+class Person(Base):
+    """A shared identity reference for anyone relevant to this org's ISMS.
+
+    One row per human, referenced (optionally) by a MiniGRC `User`, a
+    vendor system's admin/owner fields, and vendor roster snapshot rows.
+    Not a full HRIS — just enough to answer "is this still an employee?"
+    and "who owns this vendor relationship?" `employment_status` starts
+    `"unknown"` (not `"active"`) because nothing has confirmed it yet; it
+    only changes on explicit source data (manual edit or a Workspace
+    Directory sync), never inferred or deleted on a missing sync record.
+    """
+
+    __tablename__ = "people"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    display_name: Mapped[str] = mapped_column(String(255), default="")
+    employment_status: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown")
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
+    external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+VENDOR_LIFECYCLE_STATUSES = ("trial", "active", "cancelling", "cancelled")
+BILLING_FREQUENCIES = ("monthly", "annual", "other")
+TRI_STATE_VALUES = ("yes", "no", "unknown")
+
+
+class VendorSystem(Base):
+    """One system the company actually purchases or uses (GitHub, Slack, AWS...).
+
+    Deliberately one model, not separate Vendor/Application tables — see
+    CLAUDE.md's "no generic abstraction without a second caller" and this
+    branch's product boundary. Never stores a shared credential itself,
+    only a reference URL to wherever it actually lives (e.g. 1Password).
+    Cost is one authoritative amount + frequency (`annualized_cost_minor`
+    is computed, not a separate manually-entered field), so a monthly and
+    an annual total can never silently disagree.
+    """
+
+    __tablename__ = "vendor_systems"
+    __table_args__ = (
+        CheckConstraint("length(trim(system_name)) > 0", name="ck_vendor_system_name_not_blank"),
+        CheckConstraint("length(trim(vendor_name)) > 0", name="ck_vendor_vendor_name_not_blank"),
+        CheckConstraint("currency = upper(currency)", name="ck_vendor_currency_uppercase"),
+        CheckConstraint("length(currency) = 3", name="ck_vendor_currency_length"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+
+    # Identity and ownership
+    system_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    vendor_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    lifecycle_status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    access_url: Mapped[str] = mapped_column(String(2048), default="")
+    admin_console_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    primary_department: Mapped[str] = mapped_column(String(255), default="")
+    business_owner_person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
+
+    # Access continuity
+    uses_shared_login: Mapped[bool] = mapped_column(default=False)
+    shared_credential_reference_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    primary_admin_person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
+    secondary_admin_person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
+    roster_last_confirmed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Cost — one authoritative amount + frequency; annualized cost is computed
+    billing_frequency: Mapped[str] = mapped_column(String(16), nullable=False, default="other")
+    billing_amount_minor: Mapped[int | None] = mapped_column(nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    seat_count: Mapped[int | None] = mapped_column(nullable=True)
+    cost_per_seat_minor: Mapped[int | None] = mapped_column(nullable=True)
+
+    # Contract and renewal
+    contract_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    contract_start_date: Mapped[datetime.date | None] = mapped_column(nullable=True)
+    renewal_date: Mapped[datetime.date | None] = mapped_column(nullable=True)
+    auto_renew: Mapped[str] = mapped_column(String(8), nullable=False, default="unknown")
+    cancellation_notice_days: Mapped[int | None] = mapped_column(nullable=True)
+    renewal_owner_person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
+
+    # Support and escalation
+    support_portal_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    support_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    support_phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    account_manager_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    account_manager_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    emergency_escalation_instructions: Mapped[str] = mapped_column(Text, default="")
+    customer_account_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    business_owner: Mapped[Person | None] = relationship(foreign_keys=[business_owner_person_id])
+    primary_admin: Mapped[Person | None] = relationship(foreign_keys=[primary_admin_person_id])
+    secondary_admin: Mapped[Person | None] = relationship(foreign_keys=[secondary_admin_person_id])
+    renewal_owner: Mapped[Person | None] = relationship(foreign_keys=[renewal_owner_person_id])
+
+    @property
+    def annualized_cost_minor(self) -> int | None:
+        """Computed from the one authoritative amount + frequency — never a separate field."""
+        if self.billing_amount_minor is None:
+            return None
+        if self.billing_frequency == "monthly":
+            return self.billing_amount_minor * 12
+        if self.billing_frequency == "annual":
+            return self.billing_amount_minor
+        return None  # "other" frequency: not automatically annualizable
+
+    @property
+    def cancellation_deadline(self) -> datetime.date | None:
+        if self.renewal_date is None or self.cancellation_notice_days is None:
+            return None
+        return self.renewal_date - datetime.timedelta(days=self.cancellation_notice_days)
+
+
 USER_ROLES = ("user", "admin")
 
 
@@ -240,7 +362,8 @@ class User(Base):
     RBAC — used to gate integration configuration, credential connections,
     manual syncs, and destructive vendor operations. Every other
     authenticated action remains available to any logged-in user (see
-    docs/decisions/architectural-decisions.md).
+    docs/decisions/architectural-decisions.md). `person_id` optionally links
+    this login identity to the shared `Person` directory.
     """
 
     __tablename__ = "users"
@@ -249,7 +372,10 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
+    person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+    person: Mapped[Person | None] = relationship()
 
 
 class UserSession(Base):
