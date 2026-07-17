@@ -50,6 +50,9 @@ without duplicating tools that already do their job well.
 | Internal Controls | Implemented — list, detail, map to requirements | Internal (this app) |
 | Risks | Implemented — structured register, validated bounds | Internal (this app) |
 | Audit Log | Implemented — real event history | Internal (this app) |
+| People directory | Implemented — manual entries; optional Google Workspace Directory sync (future commit on this branch) | Internal (this app), optionally synced from Google Workspace |
+| Vendor/System register | Implemented — one record per purchased/used system, operational flags, renewals view | Internal (this app) |
+| Vendor roster snapshots | Planned next on this branch — append-only CSV import per vendor | Internal (this app), sourced from the vendor's own export |
 | Evidence | Placeholder page only | Internal metadata (future); large files in object storage (future) |
 | Actions (corrective actions / exceptions) | Placeholder page only | External — Asana |
 | Connectors (GitHub, AWS, Azure, Google Workspace, Asana) | Placeholder page only | External systems; this app will store results |

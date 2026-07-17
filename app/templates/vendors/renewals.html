@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Upcoming renewals · minigrc{% endblock %}
+{% block content %}
+<h1>Upcoming renewals</h1>
+<table>
+  <thead>
+    <tr><th>System</th><th>Vendor</th><th>Renewal date</th><th>Cancellation deadline</th><th>Auto-renew</th></tr>
+  </thead>
+  <tbody>
+    {% for vendor in vendors %}
+    <tr>
+      <td><a href="/vendors/{{ vendor.id }}">{{ vendor.system_name }}</a></td>
+      <td>{{ vendor.vendor_name }}</td>
+      <td>{{ vendor.renewal_date }}</td>
+      <td>{{ vendor.cancellation_deadline or "—" }}</td>
+      <td>{{ vendor.auto_renew }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5">No renewal dates on file.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

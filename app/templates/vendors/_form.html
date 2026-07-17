@@ -1,0 +1,96 @@
+{% macro vendor_fields(vendor, lifecycle_statuses, billing_frequencies, tri_state_values, people) %}
+<fieldset>
+  <legend>Identity and ownership</legend>
+  <label>System name <input type="text" name="system_name" required value="{{ vendor.system_name if vendor }}"></label>
+  <label>Vendor name <input type="text" name="vendor_name" required value="{{ vendor.vendor_name if vendor }}"></label>
+  <label>Lifecycle status
+    <select name="lifecycle_status">
+      {% for s in lifecycle_statuses %}
+      <option value="{{ s }}" {% if vendor and vendor.lifecycle_status==s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Access URL <input type="url" name="access_url" value="{{ vendor.access_url if vendor else '' }}"></label>
+  <label>Admin console URL <input type="url" name="admin_console_url" value="{{ vendor.admin_console_url if vendor and vendor.admin_console_url else '' }}"></label>
+  <label>Primary department <input type="text" name="primary_department" value="{{ vendor.primary_department if vendor else '' }}"></label>
+  <label>Business owner
+    <select name="business_owner_person_id">
+      <option value="">—</option>
+      {% for p in people %}
+      <option value="{{ p.id }}" {% if vendor and vendor.business_owner_person_id==p.id %}selected{% endif %}>{{ p.display_name or p.email }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</fieldset>
+
+<fieldset>
+  <legend>Access continuity</legend>
+  <label><input type="checkbox" name="uses_shared_login" {% if vendor and vendor.uses_shared_login %}checked{% endif %}> Uses a shared login</label>
+  <label>Credential reference URL (e.g. 1Password item) <input type="url" name="shared_credential_reference_url" value="{{ vendor.shared_credential_reference_url if vendor and vendor.shared_credential_reference_url else '' }}"></label>
+  <label>Primary admin
+    <select name="primary_admin_person_id">
+      <option value="">—</option>
+      {% for p in people %}
+      <option value="{{ p.id }}" {% if vendor and vendor.primary_admin_person_id==p.id %}selected{% endif %}>{{ p.display_name or p.email }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Secondary admin
+    <select name="secondary_admin_person_id">
+      <option value="">—</option>
+      {% for p in people %}
+      <option value="{{ p.id }}" {% if vendor and vendor.secondary_admin_person_id==p.id %}selected{% endif %}>{{ p.display_name or p.email }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</fieldset>
+
+<fieldset>
+  <legend>Cost</legend>
+  <label>Billing frequency
+    <select name="billing_frequency">
+      {% for f in billing_frequencies %}
+      <option value="{{ f }}" {% if vendor and vendor.billing_frequency==f %}selected{% endif %}>{{ f }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Billing amount <input type="text" name="billing_amount" placeholder="49.99" value="{{ '%.2f'|format(vendor.billing_amount_minor / 100) if vendor and vendor.billing_amount_minor is not none else '' }}"></label>
+  <label>Currency <input type="text" name="currency" maxlength="3" value="{{ vendor.currency if vendor else 'USD' }}"></label>
+  <label>Seat count <input type="number" name="seat_count" value="{{ vendor.seat_count if vendor and vendor.seat_count is not none else '' }}"></label>
+  <label>Cost per seat <input type="text" name="cost_per_seat" value="{{ '%.2f'|format(vendor.cost_per_seat_minor / 100) if vendor and vendor.cost_per_seat_minor is not none else '' }}"></label>
+</fieldset>
+
+<fieldset>
+  <legend>Contract and renewal</legend>
+  <label>Contract URL <input type="url" name="contract_url" value="{{ vendor.contract_url if vendor and vendor.contract_url else '' }}"></label>
+  <label>Contract start date <input type="date" name="contract_start_date" value="{{ vendor.contract_start_date if vendor and vendor.contract_start_date else '' }}"></label>
+  <label>Renewal date <input type="date" name="renewal_date" value="{{ vendor.renewal_date if vendor and vendor.renewal_date else '' }}"></label>
+  <label>Auto-renew
+    <select name="auto_renew">
+      {% for v in tri_state_values %}
+      <option value="{{ v }}" {% if vendor and vendor.auto_renew==v %}selected{% endif %}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Cancellation notice (days) <input type="number" name="cancellation_notice_days" value="{{ vendor.cancellation_notice_days if vendor and vendor.cancellation_notice_days is not none else '' }}"></label>
+  <label>Renewal owner
+    <select name="renewal_owner_person_id">
+      <option value="">—</option>
+      {% for p in people %}
+      <option value="{{ p.id }}" {% if vendor and vendor.renewal_owner_person_id==p.id %}selected{% endif %}>{{ p.display_name or p.email }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</fieldset>
+
+<fieldset>
+  <legend>Support and escalation</legend>
+  <label>Support portal URL <input type="url" name="support_portal_url" value="{{ vendor.support_portal_url if vendor and vendor.support_portal_url else '' }}"></label>
+  <label>Support email <input type="email" name="support_email" value="{{ vendor.support_email if vendor and vendor.support_email else '' }}"></label>
+  <label>Support phone <input type="text" name="support_phone" value="{{ vendor.support_phone if vendor and vendor.support_phone else '' }}"></label>
+  <label>Account manager name <input type="text" name="account_manager_name" value="{{ vendor.account_manager_name if vendor and vendor.account_manager_name else '' }}"></label>
+  <label>Account manager email <input type="email" name="account_manager_email" value="{{ vendor.account_manager_email if vendor and vendor.account_manager_email else '' }}"></label>
+  <label>Emergency escalation instructions <textarea name="emergency_escalation_instructions">{{ vendor.emergency_escalation_instructions if vendor else '' }}</textarea></label>
+  <label>Customer account reference <input type="text" name="customer_account_reference" value="{{ vendor.customer_account_reference if vendor and vendor.customer_account_reference else '' }}"></label>
+</fieldset>
+{% endmacro %}

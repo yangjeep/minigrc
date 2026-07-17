@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Vendors & Systems · minigrc{% endblock %}
+{% block content %}
+<h1>Vendors &amp; Systems</h1>
+<p class="lede"><a href="/vendors/new">+ Add vendor system</a> · <a href="/vendors/renewals">Upcoming renewals</a></p>
+
+<form method="get" action="/vendors" class="filters">
+  <select name="status">
+    <option value="">Any status</option>
+    {% for s in lifecycle_statuses %}
+    <option value="{{ s }}" {% if selected_status==s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <select name="department">
+    <option value="">Any department</option>
+    {% for d in departments %}
+    <option value="{{ d }}" {% if selected_department==d %}selected{% endif %}>{{ d }}</option>
+    {% endfor %}
+  </select>
+  <select name="owner">
+    <option value="">Any owner</option>
+    {% for p in people %}
+    <option value="{{ p.id }}" {% if selected_owner==p.id %}selected{% endif %}>{{ p.display_name or p.email }}</option>
+    {% endfor %}
+  </select>
+  <input type="text" name="flag" value="{{ selected_flag }}" placeholder="Flag contains...">
+  <button type="submit">Filter</button>
+</form>
+
+<p class="lede">
+  Annualized spend by currency (no cross-currency conversion):
+  {% for currency, minor in spend_by_currency.items() %}
+    {{ currency }} {{ "%.2f"|format(minor / 100) }}{% if not loop.last %}, {% endif %}
+  {% else %}
+    N/A
+  {% endfor %}
+</p>
+
+<table>
+  <thead>
+    <tr><th>System</th><th>Vendor</th><th>Status</th><th>Department</th><th>Renewal</th><th>Flags</th></tr>
+  </thead>
+  <tbody>
+    {% for vendor in vendors %}
+    <tr>
+      <td><a href="/vendors/{{ vendor.id }}">{{ vendor.system_name }}</a></td>
+      <td>{{ vendor.vendor_name }}</td>
+      <td><span class="badge badge-{{ vendor.lifecycle_status }}">{{ vendor.lifecycle_status }}</span></td>
+      <td>{{ vendor.primary_department or "—" }}</td>
+      <td>{{ vendor.renewal_date or "—" }}</td>
+      <td>
+        {% for flag in flags_by_id[vendor.id] %}<span class="badge badge-warning">{{ flag }}</span>{% endfor %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6">No vendor systems yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

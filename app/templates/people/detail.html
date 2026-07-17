@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ person.display_name or person.email }} · minigrc{% endblock %}
+{% block content %}
+<h1>{{ person.display_name or person.email }}</h1>
+<dl>
+  <dt>Email</dt><dd>{{ person.email }}</dd>
+  <dt>Status</dt><dd><span class="badge badge-{{ person.employment_status }}">{{ person.employment_status }}</span></dd>
+  <dt>Source</dt><dd>{{ person.source }}</dd>
+  <dt>External ID</dt><dd>{{ person.external_id or "—" }}</dd>
+  <dt>Last synced</dt><dd>{{ person.last_synced_at or "Never (manual record)" }}</dd>
+</dl>
+
+<h2>Edit</h2>
+<form method="post" action="/people/{{ person.id }}/edit">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Display name <input type="text" name="display_name" value="{{ person.display_name }}"></label>
+  <label>Employment status
+    <select name="employment_status">
+      {% for s in employment_statuses %}
+      <option value="{{ s }}" {% if person.employment_status==s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Save</button>
+</form>
+{% endblock %}

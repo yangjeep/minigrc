@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}{{ vendor.system_name }} · minigrc{% endblock %}
+{% block content %}
+<h1>{{ vendor.system_name }}</h1>
+<p class="lede"><a href="/vendors/{{ vendor.id }}/edit">Edit</a></p>
+
+{% if flags %}
+<div class="flash flash-error" role="status">
+  <strong>Operational warnings:</strong>
+  <ul>{% for flag in flags %}<li>{{ flag }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<dl>
+  <dt>Vendor</dt><dd>{{ vendor.vendor_name }}</dd>
+  <dt>Status</dt><dd><span class="badge badge-{{ vendor.lifecycle_status }}">{{ vendor.lifecycle_status }}</span></dd>
+  <dt>Department</dt><dd>{{ vendor.primary_department or "—" }}</dd>
+  <dt>Business owner</dt><dd>{{ (vendor.business_owner.display_name or vendor.business_owner.email) if vendor.business_owner else "—" }}</dd>
+  <dt>Access URL</dt><dd>{% if vendor.access_url %}<a href="{{ vendor.access_url }}">{{ vendor.access_url }}</a>{% else %}—{% endif %}</dd>
+  <dt>Admin console</dt><dd>{% if vendor.admin_console_url %}<a href="{{ vendor.admin_console_url }}">{{ vendor.admin_console_url }}</a>{% else %}—{% endif %}</dd>
+
+  <dt>Shared login</dt><dd>{{ "Yes" if vendor.uses_shared_login else "No" }}</dd>
+  <dt>Credential reference</dt><dd>{% if vendor.shared_credential_reference_url %}<a href="{{ vendor.shared_credential_reference_url }}">Open</a>{% else %}—{% endif %}</dd>
+  <dt>Primary admin</dt><dd>{{ (vendor.primary_admin.display_name or vendor.primary_admin.email) if vendor.primary_admin else "—" }}</dd>
+  <dt>Secondary admin</dt><dd>{{ (vendor.secondary_admin.display_name or vendor.secondary_admin.email) if vendor.secondary_admin else "—" }}</dd>
+  <dt>Roster last confirmed</dt><dd>{{ vendor.roster_last_confirmed_at or "Never" }}</dd>
+
+  <dt>Billing</dt><dd>{% if vendor.billing_amount_minor is not none %}{{ vendor.currency }} {{ "%.2f"|format(vendor.billing_amount_minor / 100) }} / {{ vendor.billing_frequency }}{% else %}—{% endif %}</dd>
+  <dt>Annualized cost</dt><dd>{% if vendor.annualized_cost_minor is not none %}{{ vendor.currency }} {{ "%.2f"|format(vendor.annualized_cost_minor / 100) }}{% else %}Unknown ("other" frequency){% endif %}</dd>
+  <dt>Seats</dt><dd>{{ vendor.seat_count if vendor.seat_count is not none else "—" }}</dd>
+
+  <dt>Contract</dt><dd>{% if vendor.contract_url %}<a href="{{ vendor.contract_url }}">Open</a>{% else %}—{% endif %}</dd>
+  <dt>Renewal date</dt><dd>{{ vendor.renewal_date or "—" }}</dd>
+  <dt>Auto-renew</dt><dd>{{ vendor.auto_renew }}</dd>
+  <dt>Cancellation deadline</dt><dd>{{ vendor.cancellation_deadline or "—" }}</dd>
+  <dt>Renewal owner</dt><dd>{{ (vendor.renewal_owner.display_name or vendor.renewal_owner.email) if vendor.renewal_owner else "—" }}</dd>
+
+  <dt>Support portal</dt><dd>{% if vendor.support_portal_url %}<a href="{{ vendor.support_portal_url }}">Open</a>{% else %}—{% endif %}</dd>
+  <dt>Support email</dt><dd>{{ vendor.support_email or "—" }}</dd>
+  <dt>Support phone</dt><dd>{{ vendor.support_phone or "—" }}</dd>
+  <dt>Account manager</dt><dd>{{ vendor.account_manager_name or "—" }} {% if vendor.account_manager_email %}({{ vendor.account_manager_email }}){% endif %}</dd>
+  <dt>Emergency escalation</dt><dd>{{ vendor.emergency_escalation_instructions or "—" }}</dd>
+</dl>
+{% endblock %}

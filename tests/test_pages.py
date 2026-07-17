@@ -60,6 +60,24 @@ def test_audit_log_loads(logged_in_client):
     assert b"Audit Log" in response.content
 
 
+def test_people_list_loads(logged_in_client):
+    response = logged_in_client.get("/people")
+    assert response.status_code == 200
+    assert b"People" in response.content
+
+
+def test_vendors_list_loads(logged_in_client):
+    response = logged_in_client.get("/vendors")
+    assert response.status_code == 200
+    assert b"Vendors" in response.content
+
+
+def test_vendors_renewals_loads(logged_in_client):
+    response = logged_in_client.get("/vendors/renewals")
+    assert response.status_code == 200
+    assert b"Upcoming renewals" in response.content
+
+
 @pytest.mark.parametrize("slug", PLACEHOLDER_SLUGS)
 def test_placeholder_pages_load(logged_in_client, slug):
     response = logged_in_client.get(f"/{slug}")

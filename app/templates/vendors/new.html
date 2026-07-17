@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% import "vendors/_form.html" as forms %}
+{% block title %}Add vendor system · minigrc{% endblock %}
+{% block content %}
+<h1>Add vendor system</h1>
+<form method="post" action="/vendors">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  {{ forms.vendor_fields(none, lifecycle_statuses, billing_frequencies, tri_state_values, people) }}
+  <button type="submit">Add vendor system</button>
+</form>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}People · minigrc{% endblock %}
+{% block content %}
+<h1>People</h1>
+<p class="lede"><a href="/people/new">+ Add person</a></p>
+
+<form method="get" action="/people" class="filters">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search email or name">
+  <select name="status">
+    <option value="">Any status</option>
+    {% for s in employment_statuses %}
+    <option value="{{ s }}" {% if selected_status==s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Filter</button>
+</form>
+
+<table>
+  <thead>
+    <tr><th>Name</th><th>Email</th><th>Status</th><th>Source</th></tr>
+  </thead>
+  <tbody>
+    {% for person in people %}
+    <tr>
+      <td><a href="/people/{{ person.id }}">{{ person.display_name or "(no name)" }}</a></td>
+      <td>{{ person.email }}</td>
+      <td><span class="badge badge-{{ person.employment_status }}">{{ person.employment_status }}</span></td>
+      <td>{{ person.source }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">No people yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
