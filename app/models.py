@@ -228,12 +228,18 @@ class Risk(Base):
 RISK_STATUSES = ("open", "mitigating", "accepted", "closed")
 
 
+USER_ROLES = ("user", "admin")
+
+
 class User(Base):
     """A local application user.
 
     Email is the login identifier, normalized to lowercase and stored
     unique. Passwords are hashed with pwdlib (Argon2) — see app/security.py.
-    All authenticated users share the same permissions in this MVP (see
+    `role` is a binary distinction (`"user"` or `"admin"`) — not general
+    RBAC — used to gate integration configuration, credential connections,
+    manual syncs, and destructive vendor operations. Every other
+    authenticated action remains available to any logged-in user (see
     docs/decisions/architectural-decisions.md).
     """
 
@@ -242,6 +248,7 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
 
 
