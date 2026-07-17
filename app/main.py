@@ -27,6 +27,7 @@ from app.routers import (
     controls,
     dashboard,
     frameworks,
+    google_oidc,
     people,
     placeholders,
     policies,
@@ -112,6 +113,7 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
         return {"status": "ok"}
 
     app.include_router(auth.router)
+    app.include_router(google_oidc.router)
     app.include_router(dashboard.router)
     app.include_router(frameworks.router)
     app.include_router(controls.router)
