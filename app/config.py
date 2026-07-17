@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     session_ttl_hours: int = 24 * 7
     session_cookie_secure: bool = False
 
+    # Public base URL this app is served at (e.g. "https://grc.example.com"),
+    # used only to derive OAuth redirect URIs safely — never trust the
+    # request's Host header for this. Required for Google OIDC login.
+    public_base_url: str = ""
+
+    google_oidc_client_id: str = ""
+    google_oidc_client_secret: str = ""
+    google_oidc_allowed_domains: str = ""
+
     @property
     def resolved_database_path(self) -> str:
         return self.database_path or f"{self.data_dir.rstrip('/')}/grc.db"
@@ -27,6 +36,18 @@ class Settings(BaseSettings):
     @property
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
+
+    @property
+    def google_oidc_allowed_domains_set(self) -> set[str]:
+        return {d.strip().lower() for d in self.google_oidc_allowed_domains.split(",") if d.strip()}
+
+    @property
+    def google_oidc_enabled(self) -> bool:
+        return bool(self.google_oidc_client_id and self.google_oidc_client_secret and self.public_base_url)
+
+    @property
+    def google_oidc_redirect_uri(self) -> str:
+        return f"{self.public_base_url.rstrip('/')}/auth/google/callback"
 
 
 @lru_cache

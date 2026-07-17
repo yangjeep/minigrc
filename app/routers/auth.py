@@ -4,11 +4,12 @@ import datetime
 import logging
 
 from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
-from app.config import get_settings
+from app.config import Settings
 from app.deps import get_db, require_login, verify_csrf
 from app.flash import redirect_with_flash
 from app.models import User, UserSession
@@ -25,10 +26,40 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def start_user_session(db: Session, user: User, settings: Settings) -> RedirectResponse:
+    """Create a server-side session row + cookie, and redirect to the dashboard.
+
+    Shared by local email/password login and Google OIDC login — the two
+    differ only in how they establish *who* the user is; once a `User` is
+    known, session issuance is identical.
+    """
+    raw_token = new_session_token()
+    expires_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=settings.session_ttl_hours)
+    session_row = UserSession(
+        user_id=user.id, token_hash=hash_session_token(raw_token), expires_at=expires_at
+    )
+    db.add(session_row)
+    db.flush()
+
+    response = redirect_with_flash("/", f"Signed in as {user.email}.")
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        raw_token,
+        httponly=True,
+        samesite="lax",
+        secure=settings.session_cookie_secure,
+        max_age=settings.session_ttl_hours * 3600,
+    )
+    return response
+
+
 @router.get("/login")
 def login_form(request: Request):
+    settings = request.app.state.settings
     templates = request.app.state.templates
-    return templates.TemplateResponse(request, "login.html", {})
+    return templates.TemplateResponse(
+        request, "login.html", {"google_oidc_enabled": settings.google_oidc_enabled}
+    )
 
 
 @router.post("/login")
@@ -46,14 +77,7 @@ def login_submit(
         logger.info("login failed for %s", normalized)
         return redirect_with_flash("/login", "Invalid email or password.", kind="error")
 
-    settings = get_settings()
-    raw_token = new_session_token()
-    expires_at = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=settings.session_ttl_hours)
-    session_row = UserSession(
-        user_id=user.id, token_hash=hash_session_token(raw_token), expires_at=expires_at
-    )
-    db.add(session_row)
-    db.flush()
+    settings = request.app.state.settings
     record_audit_event(
         db,
         entity_type="user",
@@ -62,17 +86,7 @@ def login_submit(
         detail="User signed in",
         actor=user.email,
     )
-
-    response = redirect_with_flash("/", f"Signed in as {user.email}.")
-    response.set_cookie(
-        SESSION_COOKIE_NAME,
-        raw_token,
-        httponly=True,
-        samesite="lax",
-        secure=settings.session_cookie_secure,
-        max_age=settings.session_ttl_hours * 3600,
-    )
-    return response
+    return start_user_session(db, user, settings)
 
 
 @router.post("/logout")
