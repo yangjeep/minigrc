@@ -15,6 +15,12 @@ def test_init_db_creates_expected_tables(tmp_path):
         "control_requirement_mappings",
         "risks",
         "audit_events",
+        "users",
+        "user_sessions",
+        "policies",
+        "policy_versions",
+        "requirement_assessments",
+        "requirement_notes",
     }.issubset(tables)
 
 
