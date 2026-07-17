@@ -57,6 +57,19 @@ def require_login(request: Request, db: Session = Depends(get_db)) -> User:
     return user
 
 
+def require_admin(user: User = Depends(require_login)) -> User:
+    """Require the logged-in user to hold the `admin` role.
+
+    Gates integration configuration, credential connections, manual syncs,
+    and destructive vendor operations. Every other authenticated route
+    stays available to any logged-in user — see
+    docs/decisions/architectural-decisions.md.
+    """
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    return user
+
+
 def verify_csrf(request: Request, csrf_token: str = Form(...)) -> None:
     cookie_value = request.cookies.get(CSRF_COOKIE_NAME)
     if not csrf_tokens_match(cookie_value, csrf_token):

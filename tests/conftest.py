@@ -11,6 +11,7 @@ from app.security import hash_password
 
 TEST_PASSWORD = "correct horse battery staple"  # noqa: S105 (test fixture, not a real secret)
 TEST_EMAIL = "admin@example.com"
+ADMIN_EMAIL = "root-admin@example.com"
 
 CSRF_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
 
@@ -52,3 +53,26 @@ def logged_in_client(client, test_user):
     )
     assert response.status_code in (200, 303)
     return client
+
+
+@pytest.fixture
+def admin_user(app):
+    with app.state.session_factory() as session:
+        user = User(email=ADMIN_EMAIL, password_hash=hash_password(TEST_PASSWORD), role="admin")
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        return user
+
+
+@pytest.fixture
+def admin_client(app, admin_user):
+    admin_client = TestClient(app)
+    login_page = admin_client.get("/login")
+    csrf_token = extract_csrf_token(login_page.text)
+    response = admin_client.post(
+        "/login",
+        data={"email": ADMIN_EMAIL, "password": TEST_PASSWORD, "csrf_token": csrf_token},
+    )
+    assert response.status_code in (200, 303)
+    return admin_client
