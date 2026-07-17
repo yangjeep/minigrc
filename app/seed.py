@@ -15,10 +15,10 @@ from app.audit import record_audit_event
 from app.models import (
     ControlRequirementMapping,
     Framework,
-    FrameworkRequirement,
     InternalControl,
     Risk,
 )
+from app.requirements import add_requirement
 
 
 def seed_if_empty(session: Session) -> bool:
@@ -75,14 +75,15 @@ def seed_if_empty(session: Session) -> bool:
         ),
     ]
     requirements = []
-    for reference_code, title, summary in requirement_specs:
-        requirement = FrameworkRequirement(
-            framework_id=framework.id,
+    for order, (reference_code, title, summary) in enumerate(requirement_specs):
+        requirement = add_requirement(
+            session,
+            framework,
             reference_code=reference_code,
             title=title,
             summary=summary,
+            display_order=order,
         )
-        session.add(requirement)
         requirements.append(requirement)
     session.flush()
     record_audit_event(
