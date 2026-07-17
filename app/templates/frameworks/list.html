@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Frameworks · minigrc{% endblock %}
+{% block content %}
+<h1>Frameworks</h1>
+<p class="lede"><a href="/frameworks/new">+ New framework</a></p>
+<table>
+  <thead>
+    <tr><th>Name</th><th>Version</th><th>Active</th><th>Requirements</th><th>Progress</th></tr>
+  </thead>
+  <tbody>
+    {% for framework in frameworks %}
+    {% set progress = progress_by_id[framework.id] %}
+    <tr>
+      <td><a href="/frameworks/{{ framework.id }}">{{ framework.name }}</a></td>
+      <td>{{ framework.version }}</td>
+      <td>{{ "Yes" if framework.is_active else "No" }}</td>
+      <td>{{ framework.requirements|length }}</td>
+      <td>{{ (progress.percent ~ "%") if progress.percent is not none else "N/A" }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5">No frameworks yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

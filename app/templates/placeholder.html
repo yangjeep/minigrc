@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · minigrc{% endblock %}
+{% block content %}
+<h1>{{ title }}</h1>
+<div class="placeholder-card">
+  <p><strong>Status:</strong> {{ status }}</p>
+  <p><strong>Responsibility:</strong> {{ responsibility }}</p>
+  <p><strong>Source of truth:</strong> {{ source_of_truth }}</p>
+</div>
+{% endblock %}

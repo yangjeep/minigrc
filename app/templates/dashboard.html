@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · minigrc{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<p class="lede">Lightweight, self-hosted ISMS/GRC tool for one organization's compliance program. Not a replacement for Vanta, Drata, Wiz, or Aikido.</p>
+
+<div class="stat-row">
+  <div class="stat-card">
+    <div class="stat-value">{{ framework_count }}</div>
+    <div class="stat-label">Active frameworks</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ incomplete_requirements }}</div>
+    <div class="stat-label">Incomplete requirements</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ open_risk_count }}</div>
+    <div class="stat-label">Open risks</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ policies_overdue }}</div>
+    <div class="stat-label">Policies overdue for review</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ policies_due_soon }}</div>
+    <div class="stat-label">Policies due within 30 days</div>
+  </div>
+</div>
+
+<h2>Framework progress</h2>
+<table>
+  <thead><tr><th>Framework</th><th>Complete</th><th>Applicable</th><th>Implemented</th></tr></thead>
+  <tbody>
+    {% for framework, progress in progress_list %}
+    <tr>
+      <td><a href="/frameworks/{{ framework.id }}">{{ framework.name }}</a></td>
+      <td>{{ (progress.percent ~ "%") if progress.percent is not none else "N/A" }}</td>
+      <td>{{ progress.applicable }}</td>
+      <td>{{ progress.implemented }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">No active frameworks yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Policies by status</h2>
+<ul>
+  {% for status, count in policies_by_status.items() %}
+  <li>{{ status }}: {{ count }}</li>
+  {% else %}
+  <li>No policies yet.</li>
+  {% endfor %}
+</ul>
+
+<h2>Recent notes</h2>
+<table>
+  <thead><tr><th>When (UTC)</th><th>Author</th><th>Note</th></tr></thead>
+  <tbody>
+    {% for note in recent_notes %}
+    <tr><td>{{ note.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td><td>{{ note.author }}</td><td>{{ note.body }}</td></tr>
+    {% else %}
+    <tr><td colspan="3">No notes yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Recent audit activity</h2>
+<table>
+  <thead><tr><th>When (UTC)</th><th>Entity</th><th>Action</th><th>Detail</th></tr></thead>
+  <tbody>
+    {% for event in recent_audit_events %}
+    <tr>
+      <td>{{ event.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{{ event.entity_type }}</td>
+      <td>{{ event.action }}</td>
+      <td>{{ event.detail }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">No audit events yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Where things live</h2>
+<ul>
+  <li><a href="/frameworks">Frameworks</a>, <a href="/controls">Controls</a>, <a href="/policies">Policies</a>, <a href="/risks">Risks</a>, <a href="/audit-log">Audit Log</a> — implemented.</li>
+  <li><a href="/evidence">Evidence</a>, <a href="/actions">Actions</a>, <a href="/connectors">Connectors</a>, <a href="/trust-center">Trust Center</a> — placeholders, see each page for status.</li>
+</ul>
+{% endblock %}

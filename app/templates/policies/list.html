@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Policies · minigrc{% endblock %}
+{% block content %}
+<h1>Policies</h1>
+<p class="lede"><a href="/policies/new">+ New policy</a></p>
+
+<form method="get" action="/policies" class="filter-form">
+  <label>Status
+    <select name="status">
+      <option value="">All</option>
+      {% for s in statuses %}
+      <option value="{{ s }}" {% if selected_status==s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Owner
+    <select name="owner">
+      <option value="">All</option>
+      {% for o in owners %}
+      <option value="{{ o }}" {% if selected_owner==o %}selected{% endif %}>{{ o }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Filter</button>
+</form>
+
+<table>
+  <thead>
+    <tr><th>Title</th><th>Owner</th><th>Status</th><th>Latest version</th><th>Next review</th></tr>
+  </thead>
+  <tbody>
+    {% for policy in policies %}
+    <tr>
+      <td><a href="/policies/{{ policy.id }}">{{ policy.title }}</a></td>
+      <td>{{ policy.owner }}</td>
+      <td><span class="badge badge-{{ policy.status }}">{{ policy.status }}</span></td>
+      <td>{{ "v" ~ policy.latest_version.version_number if policy.latest_version else "no file yet" }}</td>
+      <td>{{ policy.next_review_date or "—" }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5">No policies yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

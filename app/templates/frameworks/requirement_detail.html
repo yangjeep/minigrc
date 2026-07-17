@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}{{ requirement.reference_code }} · minigrc{% endblock %}
+{% block content %}
+<p><a href="/frameworks/{{ framework.id }}">&larr; {{ framework.name }}</a></p>
+<h1>{{ requirement.reference_code }} — {{ requirement.title }}</h1>
+<p class="lede">{{ requirement.summary }}</p>
+
+<h2>Assessment</h2>
+<p>
+  <strong>Applicable:</strong> {{ assessment.applicable }} &middot;
+  <strong>Status:</strong> <span class="badge badge-{{ assessment.implementation_state }}">{{ assessment.implementation_state }}</span> &middot;
+  <strong>Owner:</strong> {{ assessment.owner or "—" }} &middot;
+  <strong>Last reviewed:</strong>
+  {% if assessment.last_reviewed_at %}{{ assessment.last_reviewed_at.strftime("%Y-%m-%d %H:%M:%S") }} by {{ assessment.last_reviewed_by }}{% else %}never{% endif %}
+</p>
+
+<form method="post" action="/frameworks/{{ framework.id }}/requirements/{{ requirement.id }}/assessment">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Applicable
+    <select name="applicable">
+      <option value="yes" {% if assessment.applicable=="yes" %}selected{% endif %}>Yes</option>
+      <option value="no" {% if assessment.applicable=="no" %}selected{% endif %}>No</option>
+    </select>
+  </label>
+  <label>Implementation state
+    <select name="implementation_state">
+      {% for s in implementation_states %}
+      <option value="{{ s }}" {% if assessment.implementation_state==s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Owner <input type="text" name="owner" value="{{ assessment.owner }}"></label>
+  <label>Note (required if marking not applicable)
+    <textarea name="note_body" placeholder="Explain the decision or update"></textarea>
+  </label>
+  <label class="checkbox-label">
+    <input type="checkbox" name="mark_reviewed" value="true">
+    Mark as reviewed today
+  </label>
+  <button type="submit">Save assessment</button>
+</form>
+
+{% if requirement.mappings %}
+<h2>Mapped controls</h2>
+<table>
+  <thead><tr><th>Control</th><th>Status</th><th>Owner</th></tr></thead>
+  <tbody>
+    {% for mapping in requirement.mappings %}
+    <tr>
+      <td><a href="/controls/{{ mapping.control.id }}">{{ mapping.control.name }}</a></td>
+      <td><span class="badge badge-{{ mapping.control.status }}">{{ mapping.control.status }}</span></td>
+      <td>{{ mapping.control.owner }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Add a note</h2>
+<form method="post" action="/frameworks/{{ framework.id }}/requirements/{{ requirement.id }}/notes">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Note <textarea name="body" required></textarea></label>
+  <button type="submit">Add note</button>
+</form>
+
+<h2>Note history</h2>
+<table>
+  <thead><tr><th>When (UTC)</th><th>Author</th><th>Note</th></tr></thead>
+  <tbody>
+    {% for note in notes %}
+    <tr>
+      <td>{{ note.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{{ note.author }}</td>
+      <td>{{ note.body }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3">No notes yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

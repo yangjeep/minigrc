@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Audit Log · minigrc{% endblock %}
+{% block content %}
+<h1>Audit Log</h1>
+<p class="lede">Auditor-oriented history of changes recorded by the application. Most recent 200 events.</p>
+<table>
+  <thead>
+    <tr><th>When (UTC)</th><th>Entity</th><th>Action</th><th>Detail</th><th>Actor</th></tr>
+  </thead>
+  <tbody>
+    {% for event in events %}
+    <tr>
+      <td>{{ event.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{{ event.entity_type }}</td>
+      <td>{{ event.action }}</td>
+      <td>{{ event.detail }}</td>
+      <td>{{ event.actor }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5">No audit events yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}New framework · minigrc{% endblock %}
+{% block content %}
+<p><a href="/frameworks">&larr; Frameworks</a></p>
+<h1>New framework</h1>
+<form method="post" action="/frameworks">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Name <input type="text" name="name" required></label>
+  <label>Version <input type="text" name="version" required></label>
+  <label>Description <textarea name="description"></textarea></label>
+  <label class="checkbox-label">
+    <input type="checkbox" name="is_placeholder_content" value="true" checked>
+    Contains placeholder/sample content (not licensed normative text)
+  </label>
+  <button type="submit">Create framework</button>
+</form>
+{% endblock %}

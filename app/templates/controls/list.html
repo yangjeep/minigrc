@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Controls · minigrc{% endblock %}
+{% block content %}
+<h1>Internal Controls</h1>
+<table>
+  <thead>
+    <tr><th>Name</th><th>Owner</th><th>Status</th><th>Review frequency</th><th>Mapped requirements</th></tr>
+  </thead>
+  <tbody>
+    {% for control in controls %}
+    <tr>
+      <td><a href="/controls/{{ control.id }}">{{ control.name }}</a></td>
+      <td>{{ control.owner }}</td>
+      <td><span class="badge badge-{{ control.status }}">{{ control.status }}</span></td>
+      <td>{{ control.review_frequency }}</td>
+      <td>{{ control.mappings|length }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5">No controls yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

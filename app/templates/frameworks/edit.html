@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ framework.name }} · minigrc{% endblock %}
+{% block content %}
+<p><a href="/frameworks/{{ framework.id }}">&larr; {{ framework.name }}</a></p>
+<h1>Edit framework</h1>
+<form method="post" action="/frameworks/{{ framework.id }}/edit">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Name <input type="text" name="name" value="{{ framework.name }}" required></label>
+  <label>Version <input type="text" name="version" value="{{ framework.version }}" required></label>
+  <label>Description <textarea name="description">{{ framework.description }}</textarea></label>
+  <label class="checkbox-label">
+    <input type="checkbox" name="is_placeholder_content" value="true" {% if framework.is_placeholder_content %}checked{% endif %}>
+    Contains placeholder/sample content (not licensed normative text)
+  </label>
+  <label class="checkbox-label">
+    <input type="checkbox" name="is_active" value="true" {% if framework.is_active %}checked{% endif %}>
+    Active
+  </label>
+  <button type="submit">Save changes</button>
+</form>
+{% endblock %}

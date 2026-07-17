@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Add requirement · minigrc{% endblock %}
+{% block content %}
+<p><a href="/frameworks/{{ framework.id }}">&larr; {{ framework.name }}</a></p>
+<h1>Add requirement</h1>
+<form method="post" action="/frameworks/{{ framework.id }}/requirements">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Reference code <input type="text" name="reference_code" required placeholder="e.g. A.5.1"></label>
+  <label>Title <input type="text" name="title" required></label>
+  <label>Description <textarea name="summary"></textarea></label>
+  <label>Display order <input type="number" name="display_order" value="0"></label>
+  <button type="submit">Add requirement</button>
+</form>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ control.name }} · minigrc{% endblock %}
+{% block content %}
+<p><a href="/controls">&larr; Controls</a></p>
+<h1>{{ control.name }}</h1>
+<p class="lede">{{ control.description }}</p>
+<p>
+  <strong>Owner:</strong> {{ control.owner }} &middot;
+  <strong>Status:</strong> <span class="badge badge-{{ control.status }}">{{ control.status }}</span> &middot;
+  <strong>Review frequency:</strong> {{ control.review_frequency }}
+</p>
+
+<h2>Mapped requirements</h2>
+<table>
+  <thead>
+    <tr><th>Framework</th><th>Reference</th><th>Title</th></tr>
+  </thead>
+  <tbody>
+    {% for mapping in control.mappings %}
+    <tr>
+      <td>{{ mapping.requirement.framework.name }}</td>
+      <td>{{ mapping.requirement.reference_code }}</td>
+      <td>{{ mapping.requirement.title }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3">No requirements mapped yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if available_requirements %}
+<h2>Map a requirement</h2>
+<form method="post" action="/controls/{{ control.id }}/mappings">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <select name="requirement_id" required>
+    {% for requirement in available_requirements %}
+    <option value="{{ requirement.id }}">{{ requirement.reference_code }} — {{ requirement.title }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Add mapping</button>
+</form>
+{% endif %}
+{% endblock %}

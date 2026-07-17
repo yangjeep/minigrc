@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Risks · minigrc{% endblock %}
+{% block content %}
+<h1>Risk Register</h1>
+<table>
+  <thead>
+    <tr><th>Title</th><th>Category</th><th>Likelihood</th><th>Impact</th><th>Score</th><th>Owner</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+    {% for risk in risks %}
+    <tr>
+      <td>{{ risk.title }}</td>
+      <td>{{ risk.category }}</td>
+      <td>{{ risk.likelihood }}</td>
+      <td>{{ risk.impact }}</td>
+      <td>{{ risk.score }}</td>
+      <td>{{ risk.owner }}</td>
+      <td><span class="badge badge-{{ risk.status }}">{{ risk.status }}</span></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7">No risks yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Add a risk</h2>
+<form method="post" action="/risks">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Title <input type="text" name="title" required></label>
+  <label>Description <textarea name="description"></textarea></label>
+  <label>Category <input type="text" name="category" value="general"></label>
+  <label>Likelihood (1-5) <input type="number" name="likelihood" min="1" max="5" value="1"></label>
+  <label>Impact (1-5) <input type="number" name="impact" min="1" max="5" value="1"></label>
+  <label>Owner <input type="text" name="owner"></label>
+  <label>Treatment plan <textarea name="treatment_plan"></textarea></label>
+  <button type="submit">Add risk</button>
+</form>
+{% endblock %}

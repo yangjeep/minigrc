@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}{{ policy.title }} · minigrc{% endblock %}
+{% block content %}
+<p><a href="/policies">&larr; Policies</a></p>
+<h1>{{ policy.title }}</h1>
+<p class="lede">{{ policy.description }}</p>
+<p>
+  <strong>Owner:</strong> {{ policy.owner or "—" }} &middot;
+  <strong>Status:</strong> <span class="badge badge-{{ policy.status }}">{{ policy.status }}</span> &middot;
+  <strong>Effective:</strong> {{ policy.effective_date or "—" }} &middot;
+  <strong>Next review:</strong> {{ policy.next_review_date or "—" }}
+</p>
+
+<h2>Versions</h2>
+<table>
+  <thead>
+    <tr><th>Version</th><th>File</th><th>Size</th><th>Uploaded</th><th>By</th><th>Note</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for version in policy.versions %}
+    <tr>
+      <td>v{{ version.version_number }}</td>
+      <td>{{ version.original_filename }}</td>
+      <td>{{ (version.byte_size / 1024) | round(1) }} KB</td>
+      <td>{{ version.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{{ version.uploader }}</td>
+      <td>{{ version.change_note }}</td>
+      <td><a href="/policies/{{ policy.id }}/versions/{{ version.id }}/download">Download</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7">No versions uploaded yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Upload new version</h2>
+<form method="post" action="/policies/{{ policy.id }}/versions" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Document (PDF or DOCX) <input type="file" name="file" accept=".pdf,.docx" required></label>
+  <label>Change note <input type="text" name="change_note" placeholder="What changed in this version?"></label>
+  <button type="submit">Upload version</button>
+</form>
+
+<h2>Edit metadata</h2>
+<form method="post" action="/policies/{{ policy.id }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Title <input type="text" name="title" value="{{ policy.title }}" required></label>
+  <label>Description <textarea name="description">{{ policy.description }}</textarea></label>
+  <label>Owner <input type="text" name="owner" value="{{ policy.owner }}"></label>
+  <label>Status
+    <select name="status">
+      {% for s in statuses %}
+      <option value="{{ s }}" {% if policy.status==s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Effective date <input type="date" name="effective_date" value="{{ policy.effective_date or '' }}"></label>
+  <label>Next review date <input type="date" name="next_review_date" value="{{ policy.next_review_date or '' }}"></label>
+  <button type="submit">Save changes</button>
+</form>
+
+{% if policy.status != "retired" %}
+<h2>Retire policy</h2>
+<form method="post" action="/policies/{{ policy.id }}/retire">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit" class="danger-button">Retire policy</button>
+</form>
+{% endif %}
+{% endblock %}
