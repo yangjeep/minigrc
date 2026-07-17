@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}New policy · minigrc{% endblock %}
+{% block content %}
+<p><a href="/policies">&larr; Policies</a></p>
+<h1>New policy</h1>
+<form method="post" action="/policies" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Title <input type="text" name="title" required></label>
+  <label>Description <textarea name="description"></textarea></label>
+  <label>Owner <input type="text" name="owner"></label>
+  <label>Status
+    <select name="status">
+      {% for s in statuses %}
+      <option value="{{ s }}" {% if s=="draft" %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Effective date <input type="date" name="effective_date"></label>
+  <label>Next review date <input type="date" name="next_review_date"></label>
+  <label>Initial document (PDF or DOCX, optional) <input type="file" name="file" accept=".pdf,.docx"></label>
+  <label>Change note <input type="text" name="change_note" placeholder="e.g. Initial upload"></label>
+  <button type="submit">Create policy</button>
+</form>
+{% endblock %}
