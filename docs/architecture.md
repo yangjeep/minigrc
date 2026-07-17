@@ -106,21 +106,48 @@ SQLite file (GRC_DATA_DIR/grc.db)   Policy files (GRC_DATA_DIR/policies/<id>/<ve
   redirecting to `/login`. Logout revokes the specific `UserSession` row.
 - The first user is created with `python -m app.cli create-user --email …`
   (prompts for a password, never takes one as a CLI argument or env var).
-  There is no self-registration route.
+  There is no self-registration route. That first user automatically
+  becomes `admin`; later users default to `user`
+  (`python -m app.cli promote-admin --email …` grants admin to an
+  existing user, no password involved — see "Admin authorization" below).
+- Optional Google OIDC login (`app/google_oidc.py`,
+  `app/routers/google_oidc.py`) is a second way to establish the same
+  `User`/session — disabled (404) unless `GRC_GOOGLE_OIDC_CLIENT_ID`/
+  `_CLIENT_SECRET`/`GRC_PUBLIC_BASE_URL` are all set. Session issuance
+  itself (`app/routers/auth.py::start_user_session`) is shared between
+  local login and OIDC login.
+
+## Admin authorization
+
+- `app/models.py::User.role` is `"user"` or `"admin"` — not general RBAC.
+  `app/deps.py::require_admin` (built on `require_login`) gates
+  integration configuration, credential connections, manual syncs, and
+  admin-designated destructive vendor operations only. Every other
+  authenticated route is identical for every logged-in user.
+- See ADR #12 in `docs/decisions/architectural-decisions.md`.
 
 ## Policy storage
 
-- `app/storage.py::save_policy_version_upload` never trusts the client
-  filename as a path: it sanitizes it for *display* only, generates the
-  on-disk path from server-controlled ids (`policy_id`, `version_number`),
-  writes to `GRC_DATA_DIR/tmp/` first while hashing (SHA-256) and enforcing
-  `GRC_MAX_UPLOAD_MB`, validates file *content* (PDF signature / DOCX
-  zip + `word/document.xml`), then atomically `os.replace`s it into its
+- `app/storage.py`'s write/validate/store core (`_save_policy_version`) is
+  shared by two entry points: `save_policy_version_upload` (browser
+  upload) and `save_policy_version_from_bytes` (Google Drive capture).
+  Neither trusts the client/Drive filename as a path: it's sanitized for
+  *display* only, the on-disk path is generated from server-controlled
+  ids (`policy_id`, `version_number`), content is written to
+  `GRC_DATA_DIR/tmp/` first while hashing (SHA-256) and enforcing
+  `GRC_MAX_UPLOAD_MB`, validated by *content* (PDF signature / DOCX
+  zip + `word/document.xml`), then atomically `os.replace`d into its
   final immutable version directory. Any failure removes the temp file.
 - Downloads (`GET /policies/{id}/versions/{version_id}/download`) require
   login, stream via `FileResponse` with the stored `media_type`, a
   sanitized `Content-Disposition` filename, and `X-Content-Type-Options:
   nosniff`. `/data` is never mounted as a static directory.
+- Optional Google Drive source: a `Policy` can be linked to a Drive file
+  (`app/routers/policies.py`, admin-only) and an admin can "Capture
+  current version" — content flows through the exact same validated
+  pipeline above. Drive is never treated as archival storage; the locally
+  captured, hashed `PolicyVersion` is authoritative regardless of what
+  happens to the Drive file afterward. See ADRs #17/#18.
 
 ## Framework checklist
 
@@ -138,6 +165,66 @@ SQLite file (GRC_DATA_DIR/grc.db)   Policy files (GRC_DATA_DIR/policies/<id>/<ve
 - `app/csv_import.py::import_requirements_csv` validates every row before
   writing anything — a malformed file changes nothing.
 
+## People and Vendor/System register
+
+- `app/models.py::Person` is a shared identity reference (vendor admins,
+  roster rows, `User.person_id`, optional Workspace Directory sync).
+  `employment_status` starts `"unknown"` and only changes on explicit
+  source data — never inferred, never deleted on a missing sync record.
+- `app/models.py::VendorSystem` is one model per purchased/used system
+  (not separate Vendor/Application tables). Money is integer minor units
+  + a single `billing_frequency`; `annualized_cost_minor` is always
+  computed (`app/models.py::VendorSystem.annualized_cost_minor`), never a
+  second manually-entered field that could disagree with the first.
+  `app/vendor_flags.py::compute_flags` computes operational warnings
+  (missing admin, contract missing, renewal approaching...) from live
+  data at request time — never a stored, driftable flag.
+- `app/models.py::VendorUserSnapshot`/`VendorUserSnapshotRow`: append-only
+  vendor roster CSV import (`app/vendor_roster_import.py`), validated
+  wholesale before anything is written, sharing the bounded-read helper
+  (`app/uploads.py`) with the framework CSV importer. Delta-vs-previous
+  and Person-matching happen at read time in
+  `app/routers/vendor_systems.py`.
+- See ADRs #13–#15.
+
+## Google Drive Approvals and Workspace Directory (optional)
+
+- `app/google_drive_approvals.py::fetch_approvals` mirrors Drive's
+  Approvals API into `PolicyApprovalSnapshot` (append-only, associated
+  with a specific `PolicyVersion`). Any failure (missing scope, 403/404,
+  unsupported tenant) is caught by the caller and shown as "Approval data
+  unavailable" — never a failed sync.
+- `app/google_workspace_directory.py` requests one additional read-only
+  scope (`admin.directory.user.readonly`) on the *same* Drive OAuth
+  connection (`GRC_GOOGLE_WORKSPACE_DIRECTORY_ENABLED=true`) rather than a
+  third OAuth flow, and updates `Person.employment_status` — never
+  deletes a `Person` missing from a sync.
+- See ADRs #19/#20.
+
+## Evidence and the AWS connector
+
+- `app/models.py::EvidenceSnapshot` is one shared, immutable table for
+  evidence from any source (AWS today) — explicitly named in this
+  branch's spec as the one deliberate exception to "no shared abstraction
+  without a second caller," since two concrete sources need the same
+  point-in-time-snapshot-with-mappings shape. No edit/delete route;
+  mappable to framework requirements or internal controls
+  (`EvidenceRequirementMapping`/`EvidenceControlMapping`).
+- `app/aws_connector.py` collects exactly two evidence families —
+  CloudTrail logging posture and basic IAM hygiene — via the standard AWS
+  credential provider chain (ambient workload credentials preferred),
+  with optional `AssumeRole`. Never accepts/stores long-lived AWS access
+  keys; a failed AWS API call always produces `status="unknown"`, never
+  `"fail"`. `app/models.py::AwsConnection` holds configuration
+  (encrypted `external_id`) and is updated in place — unlike
+  `GoogleDriveConnection`, it isn't an OAuth grant with a revocation
+  history to preserve.
+- Admin-only: connection settings, "Test connection", "Run checks now"
+  (`app/routers/aws_connector.py`), and the equivalent
+  `python -m app.cli aws-run-checks`. Evidence itself (`/evidence`) is
+  viewable by any authenticated user.
+- See ADRs #21/#22.
+
 ## Testing
 
 - `tests/conftest.py` builds a fresh `FastAPI` app per test via
@@ -154,3 +241,12 @@ SQLite file (GRC_DATA_DIR/grc.db)   Policy files (GRC_DATA_DIR/policies/<id>/<ve
   authentication, policy uploads/downloads, the framework checklist
   (assessments/notes/import), risk validation, and SQLite-level integrity
   (foreign keys, CHECK constraints) respectively.
+- `tests/test_admin.py`, `tests/test_people.py`, `tests/test_vendor_systems.py`,
+  `tests/test_vendor_roster.py`, `tests/test_google_oidc.py`,
+  `tests/test_google_drive.py`, `tests/test_drive_approvals_and_directory.py`,
+  `tests/test_aws_connector.py` cover admin authorization, the People
+  directory, the Vendor/System register, vendor roster snapshots, Google
+  OIDC login, the Google Drive connector, Drive Approvals + Workspace
+  Directory sync, and the AWS connector + Evidence respectively. External
+  calls (Google, AWS) are always mocked/stubbed — see each file's use of
+  `unittest.mock.patch` or `botocore.stub.Stubber`.
