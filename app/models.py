@@ -537,6 +537,41 @@ class PolicyVersion(Base):
     captured_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
 
     policy: Mapped[Policy] = relationship(back_populates="versions")
+    approval_snapshots: Mapped[list[PolicyApprovalSnapshot]] = relationship(
+        back_populates="policy_version", cascade="all, delete-orphan"
+    )
+
+
+class PolicyApprovalSnapshot(Base):
+    """Append-only mirror of one Google Drive Approvals API record.
+
+    Optional capability — tenant availability, permissions, and API
+    behavior may vary, so an unavailable Approvals API never fails a
+    policy sync (see app/google_drive_approvals.py); the UI shows
+    "Approval data unavailable" instead. Never mutated: a changed
+    approval status is captured as a new snapshot row (deduplicated only
+    on exact-unchanged re-syncs via `raw_payload_sha256`), preserving the
+    full history of what changed and when, associated with the exact
+    immutable `PolicyVersion` it was mirrored against.
+    """
+
+    __tablename__ = "policy_approval_snapshots"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    policy_version_id: Mapped[str] = mapped_column(ForeignKey("policy_versions.id"), nullable=False)
+    external_approval_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), default="")
+    initiator: Mapped[str] = mapped_column(String(255), default="")
+    reviewer_responses_json: Mapped[str] = mapped_column(Text, default="[]")
+    create_time: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    modify_time: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    complete_time: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    due_time: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    file_content_change_behavior: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    captured_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    raw_payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    policy_version: Mapped[PolicyVersion] = relationship(back_populates="approval_snapshots")
 
 
 class GoogleDriveConnection(Base):

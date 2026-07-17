@@ -27,6 +27,7 @@ from app.google_drive import (
     get_access_token,
     revoke_token,
 )
+from app.google_workspace_directory import DIRECTORY_SCOPE
 from app.models import GoogleDriveConnection
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,7 @@ def connect(request: Request, _admin=Depends(require_admin)):
         client_id=settings.google_drive_client_id,
         redirect_uri=settings.google_drive_redirect_uri,
         state=state,
+        extra_scopes=DIRECTORY_SCOPE if settings.google_workspace_directory_enabled else "",
     )
     response = RedirectResponse(url=authorization_url, status_code=303)
     response.set_cookie(

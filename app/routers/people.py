@@ -6,9 +6,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
-from app.deps import get_db, require_login, verify_csrf
+from app.deps import get_db, require_admin, require_login, verify_csrf
 from app.flash import redirect_with_flash
+from app.google_drive import GoogleDriveError
+from app.google_workspace_directory import DirectorySyncError, fetch_directory_users, sync_directory_users
 from app.models import EMPLOYMENT_STATUSES, Person
+from app.routers.google_drive import get_access_token_for_active_connection
 from app.security import normalize_email
 
 router = APIRouter(prefix="/people", tags=["people"], dependencies=[Depends(require_login)])
@@ -34,6 +37,7 @@ def list_people(request: Request, q: str = "", status: str = "", db: Session = D
             "employment_statuses": EMPLOYMENT_STATUSES,
             "q": q,
             "selected_status": status,
+            "workspace_directory_enabled": request.app.state.settings.google_workspace_directory_enabled,
         },
     )
 
@@ -85,6 +89,42 @@ def create_person(
         actor=request.state.user.email,
     )
     return redirect_with_flash(f"/people/{person.id}", "Person added.")
+
+
+@router.post("/sync-workspace-directory")
+def sync_workspace_directory(
+    request: Request,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin),
+    _csrf: None = Depends(verify_csrf),
+):
+    """Admin-only optional sync — updates Person records from Google
+    Workspace Directory. Never deletes; a Person missing from this sync
+    is simply not touched. Manual People records remain fully usable
+    whether or not this is configured or ever run."""
+    settings = request.app.state.settings
+    if not settings.google_workspace_directory_enabled:
+        return redirect_with_flash("/people", "Workspace Directory sync is not enabled.", kind="error")
+
+    try:
+        _connection, access_token = get_access_token_for_active_connection(db, settings)
+        directory_users = fetch_directory_users(access_token=access_token)
+    except (GoogleDriveError, DirectorySyncError) as exc:
+        return redirect_with_flash("/people", str(exc), kind="error")
+
+    result = sync_directory_users(db, directory_users)
+    record_audit_event(
+        db,
+        entity_type="person",
+        entity_id="bulk",
+        action="sync_workspace_directory",
+        detail=f"Workspace Directory sync: {result['created']} created, {result['updated']} updated",
+        actor=admin.email,
+    )
+    return redirect_with_flash(
+        "/people",
+        f"Synced {result['total']} directory user(s): {result['created']} new, {result['updated']} updated.",
+    )
 
 
 @router.get("/{person_id}")
