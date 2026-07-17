@@ -454,6 +454,7 @@ ALLOWED_POLICY_MEDIA_TYPES = {
     "pdf": "application/pdf",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
+POLICY_SOURCE_TYPES = ("manual", "drive")
 
 
 class Policy(Base):
@@ -462,6 +463,12 @@ class Policy(Base):
     The actual document bytes live under GRC_DATA_DIR/policies/<policy id>/
     (see app/storage.py) — this row and its PolicyVersion children hold
     metadata plus the checksum/path needed to serve them.
+
+    `source_type` distinguishes a manually uploaded policy from one
+    associated with a Google Drive file (`drive_*` fields). Association
+    with Drive is metadata only — it never makes Drive the archival
+    record; captured `PolicyVersion` bytes remain the authoritative
+    evidence (see docs/decisions/architectural-decisions.md).
     """
 
     __tablename__ = "policies"
@@ -477,6 +484,13 @@ class Policy(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
+    source_type: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
+    drive_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    drive_web_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    drive_mime_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    drive_last_seen_revision_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    drive_last_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
     versions: Mapped[list[PolicyVersion]] = relationship(
         back_populates="policy",
         cascade="all, delete-orphan",
@@ -489,12 +503,16 @@ class Policy(Base):
 
 
 class PolicyVersion(Base):
-    """One immutable uploaded revision of a Policy.
+    """One immutable revision of a Policy — uploaded manually or captured
+    from Google Drive.
 
     Versions are never overwritten or deleted by the application — a new
-    upload always creates the next `version_number`. `stored_filename` is a
-    server-generated name (never the user-supplied original filename) used
-    to build the on-disk path; see app/storage.py.
+    capture always creates the next `version_number`. `stored_filename` is a
+    server-generated name (never the user-supplied/Drive filename) used to
+    build the on-disk path; see app/storage.py. `sha256` (of the actually
+    stored bytes) remains the authoritative integrity check regardless of
+    `source_type`; `source_revision_id`/`source_modified_at` are preserved
+    provenance, not a substitute for it.
     """
 
     __tablename__ = "policy_versions"
@@ -512,7 +530,41 @@ class PolicyVersion(Base):
     change_note: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
 
+    source_type: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
+    source_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_revision_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_modified_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    captured_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
     policy: Mapped[Policy] = relationship(back_populates="versions")
+
+
+class GoogleDriveConnection(Base):
+    """One historical record of an org-level Google Drive OAuth connection.
+
+    Append-only like PolicyVersion: connecting again always creates a new
+    row rather than mutating a past one, so "who connected this and when"
+    stays a real history. The *active* connection is the most recent row
+    with `revoked_at IS NULL`. `encrypted_refresh_token` is ciphertext
+    (see app/crypto.py) — the plaintext token is never stored, logged, or
+    exposed in any template, audit payload, or error message. Disconnect
+    clears it to `""` and stamps `revoked_at`/`revoked_by_user_id`, but
+    keeps the row so the connection's history remains visible.
+    """
+
+    __tablename__ = "google_drive_connections"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    connected_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    connected_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    granted_scopes: Mapped[str] = mapped_column(String(512), default="")
+    encrypted_refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
+    last_successful_sync_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    connected_by: Mapped[User] = relationship(foreign_keys=[connected_by_user_id])
+    revoked_by: Mapped[User | None] = relationship(foreign_keys=[revoked_by_user_id])
 
 
 class AuditEvent(Base):

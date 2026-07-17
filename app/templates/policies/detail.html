@@ -11,24 +11,63 @@
   <strong>Next review:</strong> {{ policy.next_review_date or "—" }}
 </p>
 
+<h2>Google Drive source</h2>
+{% if policy.source_type == "drive" %}
+<dl>
+  <dt>Drive file</dt><dd>{% if policy.drive_web_url %}<a href="{{ policy.drive_web_url }}">{{ policy.drive_web_url }}</a>{% else %}{{ policy.drive_file_id }}{% endif %}</dd>
+  <dt>Drive mime type</dt><dd>{{ policy.drive_mime_type or "—" }}</dd>
+  <dt>Last seen Drive revision</dt><dd>{{ policy.drive_last_seen_revision_id or "—" }}</dd>
+  <dt>Last checked</dt><dd>{{ policy.drive_last_synced_at or "—" }}</dd>
+</dl>
+{% if policy.latest_version and policy.latest_version.source_revision_id and policy.drive_last_seen_revision_id and policy.latest_version.source_revision_id != policy.drive_last_seen_revision_id %}
+<div class="flash flash-error" role="status">
+  The current Drive revision differs from the latest captured version. Capture a new version to bring it up to date.
+</div>
+{% elif not policy.latest_version or policy.latest_version.source_type != "drive" %}
+<div class="flash flash-error" role="status">Linked to Drive, but no version has been captured yet.</div>
+{% endif %}
+{% if request.state.user.role == "admin" %}
+<form method="post" action="/policies/{{ policy.id }}/drive-refresh" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit">Check Drive for changes</button>
+</form>
+<form method="post" action="/policies/{{ policy.id }}/drive-capture" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <input type="text" name="change_note" placeholder="Change note (optional)">
+  <button type="submit">Capture current version</button>
+</form>
+{% endif %}
+{% else %}
+<p>Not linked to a Drive file. Google Drive is never treated as permanent archival storage — a captured
+version's stored bytes remain the authoritative record even after linking.</p>
+{% endif %}
+{% if request.state.user.role == "admin" %}
+<form method="post" action="/policies/{{ policy.id }}/drive-link" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <input type="text" name="drive_url_or_id" placeholder="Drive file URL or ID" required>
+  <button type="submit">{{ "Re-link" if policy.source_type == "drive" else "Link to Drive file" }}</button>
+</form>
+{% endif %}
+
 <h2>Versions</h2>
 <table>
   <thead>
-    <tr><th>Version</th><th>File</th><th>Size</th><th>Uploaded</th><th>By</th><th>Note</th><th></th></tr>
+    <tr><th>Version</th><th>File</th><th>Source</th><th>Size</th><th>Captured</th><th>By</th><th>Note</th><th></th></tr>
   </thead>
   <tbody>
     {% for version in policy.versions %}
     <tr>
       <td>v{{ version.version_number }}</td>
       <td>{{ version.original_filename }}</td>
+      <td>{{ version.source_type }}{% if version.source_revision_id %} (rev {{ version.source_revision_id[:8] }}…){% endif %}</td>
       <td>{{ (version.byte_size / 1024) | round(1) }} KB</td>
-      <td>{{ version.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      <td>{{ version.captured_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
       <td>{{ version.uploader }}</td>
       <td>{{ version.change_note }}</td>
       <td><a href="/policies/{{ policy.id }}/versions/{{ version.id }}/download">Download</a></td>
     </tr>
     {% else %}
-    <tr><td colspan="7">No versions uploaded yet.</td></tr>
+    <tr><td colspan="8">No versions uploaded yet.</td></tr>
     {% endfor %}
   </tbody>
 </table>

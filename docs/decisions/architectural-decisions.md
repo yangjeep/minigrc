@@ -258,3 +258,59 @@ still has exactly one `User` table regardless of how a session started.
 **Non-goal:** SAML. OIDC covers Google Workspace sign-in with drastically
 less protocol surface (no XML signing, no metadata exchange, no ACS
 endpoint) for the one identity provider this app is scoped to support.
+
+## 17. One org-level Google Drive connection, encrypted at rest, distinct from OIDC login
+
+**Decision:** `app/models.py::GoogleDriveConnection` is an append-only
+history table (like `PolicyVersion`) — connecting again always creates a
+new row; the active connection is the most recent row with `revoked_at
+IS NULL`. The refresh token is encrypted with Fernet
+(`app/crypto.py`, requiring `GRC_ENCRYPTION_KEY`) before it's stored — the
+plaintext token is never in the database, a log line, a template, or an
+`AuditEvent.detail` string. Connect/disconnect/manual-sync-triggering
+actions (policy Drive-link/capture) require `require_admin`. The OAuth
+client credentials (`GRC_GOOGLE_DRIVE_CLIENT_ID/_SECRET`) are configured
+separately from the OIDC login credentials
+(`GRC_GOOGLE_OIDC_CLIENT_ID/_SECRET`) — see decision #16's non-negotiable
+that Drive authorization stay distinct from OIDC authentication, even
+when an operator points both at the same Google Cloud project.
+
+**Rationale:** Unlike OIDC login (per-user, ephemeral session), the Drive
+connection is a standing credential shared by the whole organization —
+exactly the kind of secret CLAUDE.md requires admin-gating and encryption
+for. Calling the Drive API v3 directly over HTTPS with `httpx` plus
+`google.oauth2.credentials.Credentials`/`google.auth.transport.requests`
+for the refresh-token grant (rather than adding
+`google-api-python-client`'s discovery-document-based client) keeps the
+dependency surface small and every call's shape explicit and easy to
+mock in tests — this app only ever calls three or four fixed Drive v3
+endpoints (`files.get`, `files.get?alt=media`, `files.export`,
+`files.list` for revisions), not the full Drive API surface a generic
+client would expose.
+
+## 18. Policy/PolicyVersion source provenance without trusting Drive as archival storage
+
+**Decision:** `Policy` gained `source_type`/`drive_*` fields;
+`PolicyVersion` gained `source_type`/`source_file_id`/
+`source_revision_id`/`source_modified_at`/`captured_at`. Capturing a Drive
+file's content reuses `app/storage.py`'s existing validated
+write-then-atomically-move pipeline (refactored into
+`_save_policy_version`, shared by `save_policy_version_upload` and the new
+`save_policy_version_from_bytes`) — same content-type validation, size
+bound, SHA-256 hashing, and immutability guarantee as a manual upload.
+`app/google_drive.py::parse_drive_file_id` only ever extracts a file ID
+from user input; it never fetches the user-supplied value as a URL,
+avoiding SSRF via a crafted "Drive link."
+
+**Rationale:** The spec is explicit that Drive's revision history is not
+guaranteed complete or permanent (Google's own documentation says so) —
+so provenance fields are additive context ("what did Drive say this was
+at capture time"), never a replacement for the locally stored,
+content-hashed, immutable bytes that remain this app's actual evidence.
+Google Docs/Sheets/Slides are exported to PDF (the one deterministic,
+archival-appropriate format specified) rather than stored as
+Google-proprietary formats with no independent viewer.
+
+**Supersedes:** Nothing — extends decision #11 (local, versioned policy
+storage) with an optional capture source; local storage remains
+authoritative either way.

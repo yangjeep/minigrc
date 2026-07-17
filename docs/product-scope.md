@@ -46,7 +46,7 @@ without duplicating tools that already do their job well.
 | Authentication | Implemented — local email/password, server-side sessions, optional Google OIDC login | Internal (this app), identity optionally asserted by Google |
 | Frameworks / Requirements | Implemented — checklist, manual add, CSV import | Internal (this app), seeded with placeholder content |
 | Requirement assessments & notes | Implemented — applicable/state/owner, append-only notes, audit history | Internal (this app) |
-| Policies | Implemented — versioned PDF/DOCX repository, review dates | Internal (this app) |
+| Policies | Implemented — versioned PDF/DOCX repository, review dates, optional Google Drive source association + capture | Internal (this app), optionally sourced from Google Drive |
 | Internal Controls | Implemented — list, detail, map to requirements | Internal (this app) |
 | Risks | Implemented — structured register, validated bounds | Internal (this app) |
 | Audit Log | Implemented — real event history | Internal (this app) |
@@ -84,6 +84,18 @@ confidence that a "reviewed" version is the same bytes that were reviewed.
 Object storage (S3-compatible) is a reasonable future upgrade once this
 app needs to scale past local disk; it is out of scope for this PR (see
 `docs/decisions/architectural-decisions.md`).
+
+**Google Drive remains the source of truth for policy *authoring*.** A
+later PR on `feat/startup-compliance-operations` added an *optional*
+association between a `Policy` and a Drive file, plus a "Capture current
+version" action that downloads/exports the file's current content through
+the exact same validated storage pipeline as a manual upload. This is
+metadata association and on-demand capture, not indexing-as-storage — the
+locally captured, immutable `PolicyVersion` bytes remain the authoritative
+record regardless of what happens to the Drive file afterward. Google
+itself does not guarantee complete or permanent Drive revision history
+(see the Drive Revisions API docs), so this app never relies on Drive as
+archival storage.
 
 ## Next PR candidates
 
