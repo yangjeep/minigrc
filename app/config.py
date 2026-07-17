@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
 
     max_upload_mb: int = 25
+    max_vendor_roster_rows: int = 5000
     session_ttl_hours: int = 24 * 7
     session_cookie_secure: bool = False
 

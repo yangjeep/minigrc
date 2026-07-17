@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Import roster · {{ vendor.system_name }} · minigrc{% endblock %}
+{% block content %}
+<h1>Import user roster — {{ vendor.system_name }}</h1>
+<p>Fixed CSV format: <code>email,name,role,status,last_login_at</code>. Every import creates a new,
+immutable snapshot — nothing is ever overwritten. A malformed or oversized file changes nothing.</p>
+<form method="post" action="/vendors/{{ vendor.id }}/roster" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Roster CSV <input type="file" name="file" accept=".csv" required></label>
+  <button type="submit">Import snapshot</button>
+</form>
+{% endblock %}

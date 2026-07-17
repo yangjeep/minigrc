@@ -11,37 +11,21 @@ from __future__ import annotations
 import csv
 import io
 
-from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from app.models import Framework
 from app.requirements import add_requirement
+from app.uploads import UploadTooLargeError as CsvTooLargeError
+from app.uploads import read_upload_bounded as read_csv_upload
+
+__all__ = [
+    "CsvTooLargeError",
+    "read_csv_upload",
+    "REQUIRED_COLUMNS",
+    "import_requirements_csv",
+]
 
 REQUIRED_COLUMNS = {"reference_code", "title"}
-
-_CHUNK_SIZE = 1024 * 1024
-
-
-class CsvTooLargeError(ValueError):
-    """Raised when a CSV upload exceeds the configured size limit."""
-
-
-def read_csv_upload(upload: UploadFile, *, max_bytes: int) -> bytes:
-    """Read an uploaded CSV in bounded chunks, never buffering past max_bytes.
-
-    Raises CsvTooLargeError before the full file is read into memory, so an
-    oversized upload never reaches the parser or the database.
-    """
-    chunks: list[bytes] = []
-    total = 0
-    while chunk := upload.file.read(_CHUNK_SIZE):
-        total += len(chunk)
-        if total > max_bytes:
-            raise CsvTooLargeError(
-                f"CSV file exceeds the maximum upload size of {max_bytes // (1024 * 1024)} MB."
-            )
-        chunks.append(chunk)
-    return b"".join(chunks)
 
 
 def import_requirements_csv(

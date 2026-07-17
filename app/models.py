@@ -350,6 +350,57 @@ class VendorSystem(Base):
         return self.renewal_date - datetime.timedelta(days=self.cancellation_notice_days)
 
 
+class VendorUserSnapshot(Base):
+    """One immutable, append-only capture of a vendor's reported user roster.
+
+    Never edited or deleted by the application — a new import always
+    creates a new snapshot; the most recent one (by `imported_at`)
+    represents the vendor's current reported roster. See
+    `app/vendor_roster_import.py` for the validate-everything-before-
+    writing-anything import pipeline.
+    """
+
+    __tablename__ = "vendor_user_snapshots"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    vendor_system_id: Mapped[str] = mapped_column(ForeignKey("vendor_systems.id"), nullable=False)
+    imported_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    imported_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_count: Mapped[int] = mapped_column(nullable=False)
+
+    vendor_system: Mapped[VendorSystem] = relationship()
+    rows: Mapped[list[VendorUserSnapshotRow]] = relationship(
+        back_populates="snapshot", cascade="all, delete-orphan"
+    )
+
+
+class VendorUserSnapshotRow(Base):
+    """One reported user row within a VendorUserSnapshot — immutable.
+
+    `imported_*` columns preserve exactly what the vendor's export said,
+    even after `matched_person_id` is set — linking an identity to a
+    `Person` never rewrites the historical imported values.
+    """
+
+    __tablename__ = "vendor_user_snapshot_rows"
+    __table_args__ = (UniqueConstraint("snapshot_id", "normalized_email", name="uq_snapshot_row_email"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    snapshot_id: Mapped[str] = mapped_column(ForeignKey("vendor_user_snapshots.id"), nullable=False)
+    normalized_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    imported_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    imported_name: Mapped[str] = mapped_column(String(255), default="")
+    imported_role: Mapped[str] = mapped_column(String(64), default="")
+    imported_status: Mapped[str] = mapped_column(String(64), default="")
+    imported_last_login_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    matched_person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
+
+    snapshot: Mapped[VendorUserSnapshot] = relationship(back_populates="rows")
+    matched_person: Mapped[Person | None] = relationship()
+
+
 USER_ROLES = ("user", "admin")
 
 
