@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
@@ -25,6 +26,8 @@ from app.security import CSRF_COOKIE_NAME, new_csrf_token
 from app.seed import seed_if_empty
 
 logger = logging.getLogger(__name__)
+
+APP_DIR = Path(__file__).resolve().parent
 
 NAV_ITEMS = [
     ("Dashboard", "/"),
@@ -68,12 +71,12 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
     app.state.session_factory = session_factory
     app.state.settings = settings
 
-    templates = Jinja2Templates(directory="app/templates")
+    templates = Jinja2Templates(directory=APP_DIR / "templates")
     templates.env.globals["nav_items"] = NAV_ITEMS
     templates.env.globals["csrf_token"] = lambda request: request.state.csrf_token
     app.state.templates = templates
 
-    app.mount("/static", StaticFiles(directory="app/static"), name="static")
+    app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 
     @app.middleware("http")
     async def csrf_cookie_middleware(request: Request, call_next):

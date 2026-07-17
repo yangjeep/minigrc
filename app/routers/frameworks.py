@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
-from app.csv_import import import_requirements_csv
+from app.csv_import import CsvTooLargeError, import_requirements_csv, read_csv_upload
 from app.deps import get_db, require_login, verify_csrf
 from app.flash import redirect_with_flash
 from app.models import (
@@ -237,7 +237,12 @@ def import_requirements(
     if framework is None:
         raise HTTPException(status_code=404, detail="Framework not found")
 
-    raw_bytes = file.file.read()
+    settings = request.app.state.settings
+    try:
+        raw_bytes = read_csv_upload(file, max_bytes=settings.max_upload_bytes)
+    except CsvTooLargeError as exc:
+        return redirect_with_flash(f"/frameworks/{framework_id}", str(exc), kind="error")
+
     created, errors = import_requirements_csv(db, framework, raw_bytes)
 
     if errors:

@@ -87,6 +87,69 @@ def test_csv_import_success(logged_in_client, app):
     assert b"X.2" in detail.content
 
 
+def test_oversize_csv_rejected_without_touching_database(logged_in_client, app):
+    framework_id = _seeded_framework_id(app)
+    with app.state.session_factory() as session:
+        before_count = session.scalar(
+            select(FrameworkRequirement).where(FrameworkRequirement.framework_id == framework_id)
+        )
+        before_ids = {
+            r.id
+            for r in session.scalars(
+                select(FrameworkRequirement).where(FrameworkRequirement.framework_id == framework_id)
+            ).all()
+        }
+
+    app.state.settings.max_upload_mb = 0  # any non-empty file now exceeds the cap
+
+    page = logged_in_client.get(f"/frameworks/{framework_id}")
+    csrf_token = extract_csrf_token(page.text)
+    csv_content = "reference_code,title,description,display_order\nOV.1,Oversized row,,1\n"
+    files = {"file": ("import.csv", csv_content, "text/csv")}
+    response = logged_in_client.post(
+        f"/frameworks/{framework_id}/import",
+        data={"csrf_token": csrf_token},
+        files=files,
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "flash_kind=error" in response.headers["location"]
+    assert "maximum" in response.headers["location"].lower()
+
+    with app.state.session_factory() as session:
+        after_ids = {
+            r.id
+            for r in session.scalars(
+                select(FrameworkRequirement).where(FrameworkRequirement.framework_id == framework_id)
+            ).all()
+        }
+    assert after_ids == before_ids
+    assert before_count is not None  # sanity: the seeded framework did have requirements
+    detail = logged_in_client.get(f"/frameworks/{framework_id}")
+    assert b"OV.1" not in detail.content
+
+
+def test_csv_within_size_limit_still_imports(logged_in_client, app):
+    framework_id = _seeded_framework_id(app)
+    app.state.settings.max_upload_mb = 25  # default cap, well above the small test file
+
+    page = logged_in_client.get(f"/frameworks/{framework_id}")
+    csrf_token = extract_csrf_token(page.text)
+    csv_content = "reference_code,title,description,display_order\nBND.1,Bounded row,,1\n"
+    files = {"file": ("import.csv", csv_content, "text/csv")}
+    response = logged_in_client.post(
+        f"/frameworks/{framework_id}/import",
+        data={"csrf_token": csrf_token},
+        files=files,
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "Imported+1" in response.headers["location"]
+
+    detail = logged_in_client.get(f"/frameworks/{framework_id}")
+    assert b"BND.1" in detail.content
+
+
 def test_malformed_csv_rolls_back_entirely(logged_in_client, app):
     framework_id = _seeded_framework_id(app)
     page = logged_in_client.get(f"/frameworks/{framework_id}")
