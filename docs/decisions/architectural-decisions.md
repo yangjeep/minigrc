@@ -153,3 +153,27 @@ not a requirement for this PR — see `docs/product-scope.md`.
 **Supersedes:** The policy portion of decision #5 ("Policies... are
 placeholder pages, not empty tables") — Evidence, Actions, Connectors, and
 Trust Center remain placeholders; Policies do not.
+
+## 12. Binary admin authorization, not general RBAC
+
+**Decision:** `User.role` is `"user"` or `"admin"` — nothing more granular.
+The first user ever created via `python -m app.cli create-user` becomes
+admin automatically; every subsequent user is `"user"` unless promoted with
+`python -m app.cli promote-admin --email ...` (no password involved, so it
+never needs to touch a credential). `app/deps.py::require_admin` gates
+integration configuration, credential connections, manual syncs, and
+destructive vendor operations only — every other authenticated route
+remains available to any logged-in user, unchanged from decision #8.
+
+**Rationale:** This PR introduces the app's first credential-adjacent
+surfaces (Google OAuth tokens, AWS role ARNs) that genuinely need to be
+restricted to a smaller set of people than "logged in at all," which
+decision #8 explicitly named as the trigger for revisiting no-RBAC. A
+second permission tier is the smallest change that satisfies that need — a
+full permission matrix would be exactly the kind of generic abstraction
+`CLAUDE.md` asks agents to avoid until a second concrete need for it
+exists.
+
+**Supersedes:** The "no RBAC" portion of decision #8 for credential/admin
+surfaces specifically; GRC data access remains identical for every
+authenticated user.
