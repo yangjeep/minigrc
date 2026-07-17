@@ -2,7 +2,7 @@
 {% block title %}{{ vendor.system_name }} · minigrc{% endblock %}
 {% block content %}
 <h1>{{ vendor.system_name }}</h1>
-<p class="lede"><a href="/vendors/{{ vendor.id }}/edit">Edit</a></p>
+<p class="lede"><a href="/vendors/{{ vendor.id }}/edit">Edit</a> · <a href="/vendors/{{ vendor.id }}/roster">User roster</a></p>
 
 {% if flags %}
 <div class="flash flash-error" role="status">

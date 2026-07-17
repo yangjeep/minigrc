@@ -4,12 +4,12 @@ import datetime
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
-from app.deps import get_db, require_login, verify_csrf
+from app.deps import get_db, require_admin, require_login, verify_csrf
 from app.flash import redirect_with_flash
 from app.models import (
     BILLING_FREQUENCIES,
@@ -17,8 +17,19 @@ from app.models import (
     VENDOR_LIFECYCLE_STATUSES,
     Person,
     VendorSystem,
+    VendorUserSnapshotRow,
 )
+from app.uploads import UploadTooLargeError, read_upload_bounded
 from app.vendor_flags import compute_flags
+from app.vendor_roster_import import (
+    VendorRosterImportError,
+    compute_delta,
+    flag_inactive_matched_people,
+    flag_unmatched_internal_emails,
+    import_vendor_roster_snapshot,
+    latest_snapshot,
+    previous_snapshot,
+)
 
 router = APIRouter(prefix="/vendors", tags=["vendors"], dependencies=[Depends(require_login)])
 
@@ -205,14 +216,29 @@ async def create_vendor(request: Request, db: Session = Depends(get_db), _csrf: 
     return redirect_with_flash(f"/vendors/{vendor.id}", "Vendor system added.")
 
 
+def _departed_roster_emails(db: Session, vendor_id: str) -> frozenset[str]:
+    snapshot = latest_snapshot(db, vendor_id)
+    if snapshot is None:
+        return frozenset()
+    rows = list(snapshot.rows)
+    people_by_id = {p.id: p for p in db.scalars(select(Person)).all()}
+    return frozenset(r.normalized_email for r in flag_inactive_matched_people(rows, people_by_id))
+
+
 @router.get("/{vendor_id}")
 def view_vendor(vendor_id: str, request: Request, db: Session = Depends(get_db)):
     vendor = db.get(VendorSystem, vendor_id)
     if vendor is None:
         raise HTTPException(status_code=404, detail="Vendor system not found")
+    departed_roster_emails = _departed_roster_emails(db, vendor_id)
     templates = request.app.state.templates
     return templates.TemplateResponse(
-        request, "vendors/detail.html", {"vendor": vendor, "flags": compute_flags(vendor)}
+        request,
+        "vendors/detail.html",
+        {
+            "vendor": vendor,
+            "flags": compute_flags(vendor, departed_roster_emails=departed_roster_emails),
+        },
     )
 
 
@@ -272,3 +298,129 @@ async def update_vendor(
         actor=request.state.user.email,
     )
     return redirect_with_flash(f"/vendors/{vendor_id}", "Vendor system updated.")
+
+
+def _known_internal_domains(db: Session) -> set[str]:
+    return {p.email.rsplit("@", 1)[-1] for p in db.scalars(select(Person)).all() if "@" in p.email}
+
+
+@router.get("/{vendor_id}/roster")
+def view_roster(vendor_id: str, request: Request, db: Session = Depends(get_db)):
+    vendor = db.get(VendorSystem, vendor_id)
+    if vendor is None:
+        raise HTTPException(status_code=404, detail="Vendor system not found")
+
+    snapshot = latest_snapshot(db, vendor_id)
+    if snapshot is None:
+        templates = request.app.state.templates
+        return templates.TemplateResponse(
+            request, "vendors/roster.html", {"vendor": vendor, "snapshot": None}
+        )
+
+    current_rows = list(snapshot.rows)
+    previous = previous_snapshot(db, vendor_id, snapshot.id)
+    previous_rows = list(previous.rows) if previous is not None else []
+    delta = compute_delta(previous_rows, current_rows)
+
+    people_by_id = {p.id: p for p in db.scalars(select(Person)).all()}
+    inactive_flagged = flag_inactive_matched_people(current_rows, people_by_id)
+    unmatched_internal = flag_unmatched_internal_emails(current_rows, _known_internal_domains(db))
+
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request,
+        "vendors/roster.html",
+        {
+            "vendor": vendor,
+            "snapshot": snapshot,
+            "rows": current_rows,
+            "delta": delta,
+            "inactive_flagged": inactive_flagged,
+            "unmatched_internal": unmatched_internal,
+            "people": _people_options(db),
+        },
+    )
+
+
+@router.get("/{vendor_id}/roster/new")
+def new_roster_snapshot_form(vendor_id: str, request: Request, db: Session = Depends(get_db)):
+    vendor = db.get(VendorSystem, vendor_id)
+    if vendor is None:
+        raise HTTPException(status_code=404, detail="Vendor system not found")
+    templates = request.app.state.templates
+    return templates.TemplateResponse(request, "vendors/roster_new.html", {"vendor": vendor})
+
+
+@router.post("/{vendor_id}/roster")
+def create_roster_snapshot(
+    vendor_id: str,
+    request: Request,
+    file: UploadFile,
+    db: Session = Depends(get_db),
+    _csrf: None = Depends(verify_csrf),
+):
+    vendor = db.get(VendorSystem, vendor_id)
+    if vendor is None:
+        raise HTTPException(status_code=404, detail="Vendor system not found")
+
+    settings = request.app.state.settings
+    try:
+        raw_bytes = read_upload_bounded(file, max_bytes=settings.max_upload_bytes)
+    except UploadTooLargeError as exc:
+        return redirect_with_flash(f"/vendors/{vendor_id}/roster/new", str(exc), kind="error")
+
+    try:
+        snapshot = import_vendor_roster_snapshot(
+            db,
+            vendor,
+            raw_bytes=raw_bytes,
+            original_filename=file.filename or "roster.csv",
+            imported_by_user_id=request.state.user.id,
+            max_rows=settings.max_vendor_roster_rows,
+        )
+    except VendorRosterImportError as exc:
+        db.rollback()
+        return redirect_with_flash(f"/vendors/{vendor_id}/roster/new", str(exc), kind="error")
+
+    record_audit_event(
+        db,
+        entity_type="vendor_system",
+        entity_id=vendor.id,
+        action="import_roster_snapshot",
+        detail=f"Imported roster snapshot ({snapshot.row_count} user(s)) for '{vendor.system_name}'",
+        actor=request.state.user.email,
+    )
+    return redirect_with_flash(
+        f"/vendors/{vendor_id}/roster", f"Imported {snapshot.row_count} roster row(s)."
+    )
+
+
+@router.post("/{vendor_id}/roster/rows/{row_id}/link")
+def link_roster_row(
+    vendor_id: str,
+    row_id: str,
+    request: Request,
+    person_id: str = Form(""),
+    db: Session = Depends(get_db),
+    _csrf: None = Depends(verify_csrf),
+    _admin=Depends(require_admin),
+):
+    row = db.get(VendorUserSnapshotRow, row_id)
+    if row is None or row.snapshot.vendor_system_id != vendor_id:
+        raise HTTPException(status_code=404, detail="Roster row not found")
+
+    person = db.get(Person, person_id) if person_id else None
+    if person_id and person is None:
+        return redirect_with_flash(f"/vendors/{vendor_id}/roster", "Person not found.", kind="error")
+
+    row.matched_person_id = person.id if person is not None else None
+    record_audit_event(
+        db,
+        entity_type="vendor_user_snapshot_row",
+        entity_id=row.id,
+        action="link_person",
+        detail=f"Linked roster row '{row.imported_email}' to person "
+        f"'{person.email if person else 'none'}' (imported values unchanged)",
+        actor=request.state.user.email,
+    )
+    return redirect_with_flash(f"/vendors/{vendor_id}/roster", "Roster row linked.")
