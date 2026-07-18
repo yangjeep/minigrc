@@ -200,30 +200,53 @@ def list_revisions(file_id: str, *, access_token: str, timeout: float = 10.0) ->
     return response.json().get("revisions", [])
 
 
-def download_file_content(metadata: DriveFileMetadata, *, access_token: str, timeout: float = 30.0) -> bytes:
-    """Download blob content, or export Google Docs/Sheets/Slides to PDF."""
+def download_file_content(
+    metadata: DriveFileMetadata, *, access_token: str, max_bytes: int, timeout: float = 30.0
+) -> bytes:
+    """Download or export content while enforcing the upload limit as it streams."""
     export_mime_type = GOOGLE_WORKSPACE_EXPORT_MIME_TYPES.get(metadata.mime_type)
+    url = f"{DRIVE_API_BASE}/files/{metadata.file_id}"
+    params = (
+        {"mimeType": export_mime_type} if export_mime_type else {"alt": "media", "supportsAllDrives": "true"}
+    )
+    if export_mime_type:
+        url += "/export"
+
     try:
-        if export_mime_type:
-            response = httpx.get(
-                f"{DRIVE_API_BASE}/files/{metadata.file_id}/export",
-                params={"mimeType": export_mime_type},
-                headers={"Authorization": f"Bearer {access_token}"},
-                timeout=timeout,
-            )
-        else:
-            response = httpx.get(
-                f"{DRIVE_API_BASE}/files/{metadata.file_id}",
-                params={"alt": "media", "supportsAllDrives": "true"},
-                headers={"Authorization": f"Bearer {access_token}"},
-                timeout=timeout,
-            )
-        response.raise_for_status()
+        with httpx.stream(
+            "GET",
+            url,
+            params=params,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=timeout,
+        ) as response:
+            response.raise_for_status()
+
+            content_length = response.headers.get("content-length")
+            if content_length:
+                try:
+                    declared_size = int(content_length)
+                except ValueError:
+                    declared_size = None
+                if declared_size is not None and declared_size > max_bytes:
+                    raise GoogleDriveError(
+                        f"Drive file exceeds the configured {max_bytes // (1024 * 1024)} MB upload limit."
+                    )
+
+            chunks: list[bytes] = []
+            total_bytes = 0
+            for chunk in response.iter_bytes(chunk_size=64 * 1024):
+                total_bytes += len(chunk)
+                if total_bytes > max_bytes:
+                    raise GoogleDriveError(
+                        f"Drive file exceeds the configured {max_bytes // (1024 * 1024)} MB upload limit."
+                    )
+                chunks.append(chunk)
+            return b"".join(chunks)
     except httpx.HTTPStatusError as exc:
         _raise_for_drive_status(exc)
     except httpx.HTTPError as exc:
         raise GoogleDriveError("Could not download the Drive file's content.") from exc
-    return response.content
 
 
 BLOB_MIME_TYPE_EXTENSIONS = {

@@ -10,6 +10,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy import select
 
 from app.aws_connector import (
+    MAX_NORMALIZED_PAYLOAD_CHARS,
     AwsConnectionError,
     build_evidence_snapshot,
     build_session,
@@ -296,6 +297,35 @@ def test_iam_account_summary_failure_is_unknown():
     stubber.deactivate()
 
 
+def test_iam_evaluates_every_user_without_a_payload_count_cap():
+    client = MagicMock()
+    client.get_account_summary.return_value = {
+        "SummaryMap": {"AccountMFAEnabled": 1, "AccountAccessKeysPresent": 0}
+    }
+    client.get_account_password_policy.return_value = {"PasswordPolicy": {"MinimumPasswordLength": 14}}
+    users = [
+        {
+            "UserName": f"user-{index:03d}",
+            "CreateDate": datetime.datetime.now(datetime.UTC),
+        }
+        for index in range(205)
+    ]
+    paginator = MagicMock()
+    paginator.paginate.return_value = [{"Users": users}]
+    client.get_paginator.return_value = paginator
+    client.list_mfa_devices.side_effect = lambda *, UserName: {
+        "MFADevices": [{}] if UserName != "user-204" else []
+    }
+    client.list_access_keys.return_value = {"AccessKeyMetadata": []}
+
+    result = check_iam(FakeSession({"iam": client}))
+
+    assert result.normalized_payload["iam_user_count"] == 205
+    assert len(result.normalized_payload["users"]) == 205
+    assert client.list_mfa_devices.call_count == 205
+    assert "user 'user-204' has no MFA device" in result.summary
+
+
 # --- build_session / AssumeRole ---
 
 
@@ -366,6 +396,24 @@ def test_build_evidence_snapshot_bounds_and_hashes():
     assert snapshot.source_type == "aws_cloudtrail"
     assert snapshot.raw_payload_sha256
     assert snapshot.source_connection_id == "conn-1"
+
+
+def test_evidence_hash_covers_content_beyond_display_limit():
+    from app.aws_connector import AwsCheckResult
+
+    shared_prefix = "x" * (MAX_NORMALIZED_PAYLOAD_CHARS + 100)
+    first = build_evidence_snapshot(
+        AwsCheckResult("iam_posture", "pass", "IAM posture", "ok", {"users": shared_prefix + "a"}),
+        connection_id="conn-1",
+    )
+    second = build_evidence_snapshot(
+        AwsCheckResult("iam_posture", "pass", "IAM posture", "ok", {"users": shared_prefix + "b"}),
+        connection_id="conn-1",
+    )
+
+    assert len(first.normalized_payload_json) == MAX_NORMALIZED_PAYLOAD_CHARS
+    assert first.normalized_payload_json == second.normalized_payload_json
+    assert first.raw_payload_sha256 != second.raw_payload_sha256
 
 
 # --- Router: connection settings, admin gating ---
@@ -439,6 +487,36 @@ def test_run_test_connection_route(mock_build_session, mock_test_connection, adm
     )
     assert response.status_code == 303
     assert "flash_kind=error" not in response.headers["location"]
+
+
+@pytest.mark.parametrize("route", ["/connectors/aws/test", "/connectors/aws/run-checks"])
+def test_aws_routes_stop_when_stored_external_id_cannot_be_decrypted(route, admin_client, app):
+    app.state.settings.encryption_key = TEST_KEY
+    page = admin_client.get("/connectors/aws/edit")
+    csrf_token = extract_csrf_token(page.text)
+    admin_client.post(
+        "/connectors/aws",
+        data={
+            "account_label": "Prod AWS",
+            "role_arn": "arn:aws:iam::123456789012:role/Evidence",
+            "external_id": "external-id-fixture",
+            "regions": "us-east-1",
+            "csrf_token": csrf_token,
+        },
+    )
+    app.state.settings.encryption_key = Fernet.generate_key().decode()
+
+    page = admin_client.get("/connectors/aws")
+    csrf_token = extract_csrf_token(page.text)
+    with patch("app.routers.aws_connector.build_session") as mock_build_session:
+        response = admin_client.post(route, data={"csrf_token": csrf_token}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "flash_kind=error" in response.headers["location"]
+    mock_build_session.assert_not_called()
+    with app.state.session_factory() as session:
+        connection = session.scalar(select(AwsConnection))
+        assert "could not be decrypted" in connection.last_error_summary
 
 
 @patch("app.routers.aws_connector.check_iam")

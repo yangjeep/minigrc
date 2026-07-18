@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy import select
 
 from app.crypto import DecryptionError, EncryptionNotConfiguredError, decrypt, encrypt
-from app.google_drive import DriveFileMetadata, GoogleDriveError, parse_drive_file_id
+from app.google_drive import (
+    DriveFileMetadata,
+    GoogleDriveError,
+    download_file_content,
+    parse_drive_file_id,
+)
 from app.models import AuditEvent, GoogleDriveConnection, Policy
 from tests.conftest import extract_csrf_token
 
@@ -95,6 +100,52 @@ def test_parse_drive_file_id_accepts_valid_forms(value):
 def test_parse_drive_file_id_rejects_invalid_forms(value):
     with pytest.raises(GoogleDriveError):
         parse_drive_file_id(value)
+
+
+def test_drive_download_streams_content_within_limit():
+    response = MagicMock()
+    response.headers = {"content-length": "5"}
+    response.iter_bytes.return_value = [b"12", b"345"]
+    stream = MagicMock()
+    stream.__enter__.return_value = response
+    metadata = DriveFileMetadata("file-id-12345", "Policy.pdf", "application/pdf", None, None)
+
+    with patch("app.google_drive.httpx.stream", return_value=stream):
+        content = download_file_content(metadata, access_token="access-fixture", max_bytes=5)
+
+    assert content == b"12345"
+    response.iter_bytes.assert_called_once_with(chunk_size=64 * 1024)
+
+
+def test_drive_download_rejects_declared_oversize_before_reading():
+    response = MagicMock()
+    response.headers = {"content-length": "6"}
+    stream = MagicMock()
+    stream.__enter__.return_value = response
+    metadata = DriveFileMetadata("file-id-12345", "Policy.pdf", "application/pdf", None, None)
+
+    with (
+        patch("app.google_drive.httpx.stream", return_value=stream),
+        pytest.raises(GoogleDriveError, match="exceeds"),
+    ):
+        download_file_content(metadata, access_token="access-fixture", max_bytes=5)
+
+    response.iter_bytes.assert_not_called()
+
+
+def test_drive_download_rejects_chunked_oversize_while_streaming():
+    response = MagicMock()
+    response.headers = {}
+    response.iter_bytes.return_value = [b"123", b"456"]
+    stream = MagicMock()
+    stream.__enter__.return_value = response
+    metadata = DriveFileMetadata("file-id-12345", "Policy.pdf", "application/pdf", None, None)
+
+    with (
+        patch("app.google_drive.httpx.stream", return_value=stream),
+        pytest.raises(GoogleDriveError, match="exceeds"),
+    ):
+        download_file_content(metadata, access_token="access-fixture", max_bytes=5)
 
 
 # --- Connector connect/disconnect ---

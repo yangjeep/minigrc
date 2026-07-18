@@ -159,6 +159,53 @@ def test_resyncing_unchanged_approval_does_not_duplicate(
 
 
 @patch("app.routers.google_drive.get_access_token", return_value="fake-access-token")
+@patch("app.routers.policies.fetch_approvals", return_value=[RAW_APPROVAL])
+def test_unchanged_approval_is_attached_to_each_captured_version(
+    _mock_fetch, _mock_token, admin_client, app, admin_user
+):
+    _enable_drive(app)
+    _seed_active_connection(app, admin_user)
+    policy_id = _create_policy_with_drive_capture(admin_client, app)
+
+    page = admin_client.get(f"/policies/{policy_id}")
+    csrf_token = extract_csrf_token(page.text)
+    admin_client.post(f"/policies/{policy_id}/drive-approvals", data={"csrf_token": csrf_token})
+
+    metadata = DriveFileMetadata(
+        file_id="1AbCdEfGhIjKlMnOpQrStUvWxYz012345",
+        name="Security Policy.pdf",
+        mime_type="application/pdf",
+        web_view_link="https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz012345/view",
+        current_revision_id="rev-2",
+    )
+    with (
+        patch("app.routers.policies.get_file_metadata", return_value=metadata),
+        patch("app.routers.policies.list_revisions", return_value=[]),
+        patch(
+            "app.routers.policies.download_file_content",
+            return_value=b"%PDF-1.4\nsecond version\n%%EOF",
+        ),
+    ):
+        page = admin_client.get(f"/policies/{policy_id}")
+        csrf_token = extract_csrf_token(page.text)
+        admin_client.post(
+            f"/policies/{policy_id}/drive-capture",
+            data={"change_note": "second version", "csrf_token": csrf_token},
+        )
+
+    page = admin_client.get(f"/policies/{policy_id}")
+    csrf_token = extract_csrf_token(page.text)
+    admin_client.post(f"/policies/{policy_id}/drive-approvals", data={"csrf_token": csrf_token})
+
+    with app.state.session_factory() as session:
+        snapshots = session.scalars(select(PolicyApprovalSnapshot)).all()
+        policy = session.get(Policy, policy_id)
+        version_ids = {version.id for version in policy.versions}
+    assert len(snapshots) == 2
+    assert {snapshot.policy_version_id for snapshot in snapshots} == version_ids
+
+
+@patch("app.routers.google_drive.get_access_token", return_value="fake-access-token")
 @patch("app.routers.policies.fetch_approvals")
 def test_changed_approval_creates_new_snapshot_not_mutation(
     mock_fetch, _mock_token, admin_client, app, admin_user
@@ -309,7 +356,7 @@ def test_workspace_directory_sync_route_creates_person_and_audits(
     _mock_fetch, _mock_token, admin_client, app, admin_user
 ):
     _enable_drive(app, workspace_directory=True)
-    _seed_active_connection(app, admin_user)
+    connection_id = _seed_active_connection(app, admin_user)
 
     page = admin_client.get("/people")
     csrf_token = extract_csrf_token(page.text)
@@ -326,6 +373,8 @@ def test_workspace_directory_sync_route_creates_person_and_audits(
             select(AuditEvent).where(AuditEvent.action == "sync_workspace_directory")
         ).all()
     assert len(events) == 1
+    assert events[0].entity_type == "google_drive_connection"
+    assert events[0].entity_id == connection_id
 
 
 def test_policy_page_shows_approval_data_unavailable_when_none_synced(logged_in_client, app):

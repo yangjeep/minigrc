@@ -393,7 +393,9 @@ def capture_drive_version(
         connection, access_token = get_access_token_for_active_connection(db, settings)
         metadata = get_file_metadata(policy.drive_file_id, access_token=access_token)
         revisions = list_revisions(policy.drive_file_id, access_token=access_token)
-        content = download_file_content(metadata, access_token=access_token)
+        content = download_file_content(
+            metadata, access_token=access_token, max_bytes=settings.max_upload_bytes
+        )
     except GoogleDriveError as exc:
         return redirect_with_flash(f"/policies/{policy_id}", str(exc), kind="error")
 
@@ -489,9 +491,7 @@ def sync_drive_approvals(
         return redirect_with_flash(f"/policies/{policy_id}", "Approval data unavailable.", kind="error")
 
     existing_hashes = {
-        (snap.external_approval_id, snap.raw_payload_sha256)
-        for version in policy.versions
-        for snap in version.approval_snapshots
+        (snap.external_approval_id, snap.raw_payload_sha256) for snap in target_version.approval_snapshots
     }
 
     created_count = 0
@@ -501,7 +501,7 @@ def sync_drive_approvals(
         except ApprovalsUnavailableError:
             continue
         if (parsed.external_approval_id, parsed.raw_payload_sha256) in existing_hashes:
-            continue  # unchanged since a prior sync — skip, don't duplicate
+            continue  # unchanged for this policy version — skip, don't duplicate
 
         db.add(
             PolicyApprovalSnapshot(
@@ -518,6 +518,7 @@ def sync_drive_approvals(
                 raw_payload_sha256=parsed.raw_payload_sha256,
             )
         )
+        existing_hashes.add((parsed.external_approval_id, parsed.raw_payload_sha256))
         created_count += 1
 
     if created_count:

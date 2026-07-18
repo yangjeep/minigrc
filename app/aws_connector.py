@@ -31,7 +31,6 @@ MAX_NORMALIZED_PAYLOAD_CHARS = 20000
 BOTO_TIMEOUT_CONFIG = BotoConfig(connect_timeout=10, read_timeout=20, retries={"max_attempts": 2})
 ASSUME_ROLE_SESSION_NAME = "minigrc-evidence-collector"
 ACCESS_KEY_AGE_WARNING_DAYS = 90
-MAX_IAM_USERS_IN_PAYLOAD = 200
 
 
 class AwsConnectionError(ValueError):
@@ -211,9 +210,6 @@ def check_iam(session) -> AwsCheckResult:
         paginator = client.get_paginator("list_users")
         for page in paginator.paginate():
             for user in page.get("Users", []):
-                if len(users_summary) >= MAX_IAM_USERS_IN_PAYLOAD:
-                    warnings.append(f"more than {MAX_IAM_USERS_IN_PAYLOAD} IAM users — payload truncated")
-                    break
                 username = user["UserName"]
                 mfa_devices = client.list_mfa_devices(UserName=username).get("MFADevices", [])
                 access_keys = client.list_access_keys(UserName=username).get("AccessKeyMetadata", [])
@@ -242,9 +238,6 @@ def check_iam(session) -> AwsCheckResult:
                         "oldest_active_key_age_days": oldest_key_age_days,
                     }
                 )
-            else:
-                continue
-            break
     except (ClientError, BotoCoreError) as exc:
         warnings.append(f"could not fully enumerate IAM users: {_safe_error(exc)}")
 
@@ -272,7 +265,8 @@ def build_evidence_snapshot(result: AwsCheckResult, *, connection_id: str) -> Ev
     a check result — shared by the admin UI route and the CLI so both
     write evidence in exactly the same shape."""
     canonical_json = json.dumps(result.normalized_payload, sort_keys=True, default=str)
-    canonical_json = canonical_json[:MAX_NORMALIZED_PAYLOAD_CHARS]
+    payload_hash = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+    displayed_json = canonical_json[:MAX_NORMALIZED_PAYLOAD_CHARS]
     source_type = f"aws_{result.check_key.split('_')[0]}" if "_" in result.check_key else "aws"
     return EvidenceSnapshot(
         source_type=source_type,
@@ -281,6 +275,6 @@ def build_evidence_snapshot(result: AwsCheckResult, *, connection_id: str) -> Ev
         status=result.status,
         title=result.title,
         summary=result.summary[:2000],
-        normalized_payload_json=canonical_json,
-        raw_payload_sha256=hashlib.sha256(canonical_json.encode("utf-8")).hexdigest(),
+        normalized_payload_json=displayed_json,
+        raw_payload_sha256=payload_hash,
     )

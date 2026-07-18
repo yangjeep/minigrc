@@ -90,6 +90,12 @@ def test_search_filters_by_email_or_name(logged_in_client):
     assert b"dave@example.com" not in page.content
 
 
+def test_search_treats_sql_wildcards_as_literal_text(logged_in_client):
+    _create_person(logged_in_client, email="wildcard@example.com")
+    page = logged_in_client.get("/people?q=%25")
+    assert b"wildcard@example.com" not in page.content
+
+
 def test_filter_by_employment_status(logged_in_client):
     _create_person(logged_in_client, email="active@example.com", status="active")
     _create_person(logged_in_client, email="departed@example.com", status="departed")
