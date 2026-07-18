@@ -2,6 +2,7 @@
 name = "minigrc"
 version = "0.2.0"
 description = "Lightweight, self-hosted ISMS/GRC application for operating a single-organization compliance program."
+license = { file = "LICENSE" }
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
