@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -22,11 +22,17 @@ def list_people(request: Request, q: str = "", status: str = "", db: Session = D
     query = select(Person)
     if status in EMPLOYMENT_STATUSES:
         query = query.where(Person.employment_status == status)
+    needle = q.strip()
+    if needle:
+        escaped = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        query = query.where(
+            or_(
+                Person.email.ilike(pattern, escape="\\"),
+                Person.display_name.ilike(pattern, escape="\\"),
+            )
+        )
     people = db.scalars(query.order_by(Person.display_name, Person.email)).all()
-
-    if q:
-        needle = q.strip().lower()
-        people = [p for p in people if needle in p.email.lower() or needle in p.display_name.lower()]
 
     templates = request.app.state.templates
     return templates.TemplateResponse(
@@ -107,7 +113,7 @@ def sync_workspace_directory(
         return redirect_with_flash("/people", "Workspace Directory sync is not enabled.", kind="error")
 
     try:
-        _connection, access_token = get_access_token_for_active_connection(db, settings)
+        connection, access_token = get_access_token_for_active_connection(db, settings)
         directory_users = fetch_directory_users(access_token=access_token)
     except (GoogleDriveError, DirectorySyncError) as exc:
         return redirect_with_flash("/people", str(exc), kind="error")
@@ -115,8 +121,8 @@ def sync_workspace_directory(
     result = sync_directory_users(db, directory_users)
     record_audit_event(
         db,
-        entity_type="person",
-        entity_id="bulk",
+        entity_type="google_drive_connection",
+        entity_id=connection.id,
         action="sync_workspace_directory",
         detail=f"Workspace Directory sync: {result['created']} created, {result['updated']} updated",
         actor=admin.email,

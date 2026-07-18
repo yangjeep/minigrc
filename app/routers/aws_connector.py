@@ -40,8 +40,12 @@ def resolve_external_id(connection: AwsConnection, *, encryption_key: str) -> st
         return None
     try:
         return decrypt(connection.encrypted_external_id, key=encryption_key)
-    except (DecryptionError, EncryptionNotConfiguredError):
-        return None
+    except (DecryptionError, EncryptionNotConfiguredError) as exc:
+        raise AwsConnectionError(
+            "The stored AWS external ID could not be decrypted. "
+            "Restore the GRC_ENCRYPTION_KEY used when this connection was saved, "
+            "or enter and save the external ID again."
+        ) from exc
 
 
 @router.get("")
@@ -120,10 +124,10 @@ def run_test_connection(
         return redirect_with_flash("/connectors/aws", "Configure an AWS connection first.", kind="error")
 
     settings = request.app.state.settings
-    external_id = resolve_external_id(connection, encryption_key=settings.encryption_key)
     region = connection.regions.split(",")[0].strip() if connection.regions else None
 
     try:
+        external_id = resolve_external_id(connection, encryption_key=settings.encryption_key)
         session = build_session(role_arn=connection.role_arn, external_id=external_id, region=region)
         result = test_connection(session, expected_account_id=connection.expected_account_id)
     except AwsConnectionError as exc:
@@ -155,10 +159,10 @@ def run_checks(
         return redirect_with_flash("/connectors/aws", "Configure an AWS connection first.", kind="error")
 
     settings = request.app.state.settings
-    external_id = resolve_external_id(connection, encryption_key=settings.encryption_key)
     region = connection.regions.split(",")[0].strip() if connection.regions else None
 
     try:
+        external_id = resolve_external_id(connection, encryption_key=settings.encryption_key)
         session = build_session(role_arn=connection.role_arn, external_id=external_id, region=region)
     except AwsConnectionError as exc:
         connection.last_error_summary = str(exc)
