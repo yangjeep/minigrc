@@ -1,6 +1,15 @@
+from pathlib import Path
+
 import pytest
 
 PLACEHOLDER_SLUGS = ["actions", "connectors", "trust-center"]
+
+VENDOR_ASSETS = [
+    "app/static/vendor/bootstrap-5.3.3/bootstrap.min.css",
+    "app/static/vendor/bootstrap-5.3.3/bootstrap.bundle.min.js",
+    "app/static/vendor/bootstrap-icons-1.11.3/bootstrap-icons.css",
+    "app/static/vendor/bootstrap-icons-1.11.3/fonts/bootstrap-icons.woff2",
+]
 
 
 def test_unauthenticated_dashboard_redirects_to_login(client):
@@ -93,3 +102,24 @@ def test_unknown_route_returns_404(logged_in_client):
 def test_health_does_not_require_auth(client):
     response = client.get("/health")
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/", "/frameworks", "/risks", "/policies", "/audit-log", "/trust-center"],
+)
+def test_pages_render_bootstrap_shell(logged_in_client, path):
+    response = logged_in_client.get(path)
+    assert response.status_code == 200
+    html = response.content
+    assert b'id="sidebarOffcanvas"' in html
+    assert b'aria-label="Primary"' in html
+    assert b"visually-hidden-focusable" in html  # skip-to-content link
+    assert b"/static/vendor/bootstrap-5.3.3/bootstrap.min.css" in html
+    assert b"/static/vendor/bootstrap-icons-1.11.3/bootstrap-icons.css" in html
+    assert b"/static/vendor/bootstrap-5.3.3/bootstrap.bundle.min.js" in html
+
+
+@pytest.mark.parametrize("asset_path", VENDOR_ASSETS)
+def test_vendored_bootstrap_assets_exist(asset_path):
+    assert Path(asset_path).is_file(), f"missing vendored asset: {asset_path}"
