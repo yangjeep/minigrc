@@ -402,3 +402,42 @@ two concrete sources (Drive approvals took its own dedicated
 different: revision-scoped, policy-specific evidence vs. this table's
 point-in-time infrastructure posture checks) genuinely need the same
 immutable-snapshot-with-mappings shape.
+
+## 23. Architecture pivot: platform/production scale supersedes decision #1's scale framing
+
+**Decision:** miniGRC's target scale and architecture assumptions widen,
+by explicit user request, to support: Postgres as a first-class supported
+database alongside SQLite; a worker process for background jobs (imports,
+connection tests, future evidence collection); Kubernetes/Helm as a
+supported deployment target; an external-database connector interface for
+read-only evidence/inventory collection from customer systems; AG Grid
+Community replacing hand-rolled tables for register-like entities
+(Frameworks, Controls, Risks, Assets). Decision #1's framing ("every
+distributed-systems concern... would be pure overhead here") and the
+single-tenant *scale* assumption in `docs/product-scope.md` are superseded
+for these specific subsystems.
+
+**What does not change:** single organization per deployment (no
+`org_id`, no org switching — the multi-tenancy half of decision #6 still
+stands), binary admin/user roles (decision #12), local session + Argon2
+auth with optional Google OIDC (decisions #8/#16 — no JWT, no additional
+hosted identity provider), Alembic migrations (decisions #2/#10), explicit
+`AuditEvent` writes alongside mutations (decision #7), CSRF double-submit
+cookie (decision #9), hex-UUID4 ids (decision #3), immutable
+evidence/policy snapshot patterns (decisions #11/#15/#22). SQLite remains
+fully supported for local development and small deployments — it is not
+deprecated by adding Postgres support.
+
+**Rationale:** This is a deliberate, explicit scale/deployment pivot, not
+an auth/security/data-model pivot. Recorded here so a future agent
+reviewing `CLAUDE.md`'s "boring monolith" framing or decision #1 doesn't
+"fix" the codebase back toward the original single-process assumption
+without realizing it was superseded on purpose. Each superseding
+subsystem (Postgres, worker, connector interface, Helm chart, grid
+framework) gets its own dedicated ADR entry as it ships, rather than this
+entry pre-specifying implementation details it doesn't yet have.
+
+**Supersedes:** The scale-framing portion of decision #1 and the
+single-tenant *scale* assumption in `docs/product-scope.md`. Does not
+supersede any auth, audit, CSRF, id-generation, or immutability decision
+listed above.
