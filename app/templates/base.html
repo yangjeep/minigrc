@@ -4,34 +4,72 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}minigrc{% endblock %}</title>
+  <link rel="stylesheet" href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/vendor/bootstrap-icons-1.11.3/bootstrap-icons.css">
+  <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div class="shell">
-    <nav class="sidebar">
-      <div class="brand">minigrc</div>
-      <ul>
-        {% for label, href in nav_items %}
-        <li><a href="{{ href }}" {% if request.url.path==href %}aria-current="page"{% endif %}>{{ label }}</a></li>
-        {% endfor %}
-      </ul>
-      {% if request.state.user is defined and request.state.user %}
-      <div class="sidebar-user">
-        <div class="sidebar-email">{{ request.state.user.email }}</div>
-        <form method="post" action="/logout">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-          <button type="submit" class="link-button">Sign out</button>
-        </form>
+  <a class="visually-hidden-focusable" href="#main-content">Skip to main content</a>
+
+  <nav class="navbar navbar-dark bg-dark d-lg-none" aria-label="Mobile">
+    <div class="container-fluid">
+      <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarOffcanvas" aria-controls="sidebarOffcanvas" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <span class="navbar-brand mb-0 mg-sidebar-brand">minigrc</span>
+    </div>
+  </nav>
+
+  <div class="d-flex">
+    <div class="offcanvas-lg offcanvas-start bg-dark mg-sidebar" tabindex="-1" id="sidebarOffcanvas" aria-labelledby="sidebarOffcanvasLabel">
+      <div class="offcanvas-header d-lg-none">
+        <span class="offcanvas-title mg-sidebar-brand" id="sidebarOffcanvasLabel">minigrc</span>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" data-bs-target="#sidebarOffcanvas" aria-label="Close"></button>
       </div>
-      {% endif %}
-    </nav>
-    <main class="content">
+      <div class="offcanvas-body d-flex flex-column p-3">
+        <span class="mg-sidebar-brand d-none d-lg-block mb-3 fs-5">minigrc</span>
+        <nav aria-label="Primary" class="flex-grow-1">
+          <ul class="nav nav-pills flex-column">
+            {% for label, href in nav_items %}
+            <li class="nav-item">
+              <a class="nav-link{% if request.url.path == href %} active{% endif %}" href="{{ href }}" {% if request.url.path == href %}aria-current="page"{% endif %}>{{ label }}</a>
+            </li>
+            {% endfor %}
+          </ul>
+        </nav>
+        {% if request.state.user is defined and request.state.user %}
+        <div class="dropdown border-top border-secondary pt-3 mt-3">
+          <button class="btn btn-dark dropdown-toggle w-100 text-start text-truncate" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="bi bi-person-circle me-1"></i>{{ request.state.user.email }}
+          </button>
+          <ul class="dropdown-menu">
+            <li>
+              <form method="post" action="/logout">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="dropdown-item">Sign out</button>
+              </form>
+            </li>
+          </ul>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <main class="flex-grow-1 p-4" id="main-content">
       {% set flash = request.query_params.get('flash') %}
       {% if flash %}
-      <div class="flash flash-{{ request.query_params.get('flash_kind', 'success') }}" role="status">{{ flash }}</div>
+      {% set flash_kind = request.query_params.get('flash_kind', 'success') %}
+      {% set alert_class = {"success": "success", "error": "danger", "warning": "warning"}.get(flash_kind, "success") %}
+      <div class="alert alert-{{ alert_class }} alert-dismissible fade show" role="status">
+        {{ flash }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
       {% endif %}
       {% block content %}{% endblock %}
     </main>
   </div>
+
+  <script src="/static/vendor/bootstrap-5.3.3/bootstrap.bundle.min.js"></script>
 </body>
 </html>

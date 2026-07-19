@@ -1,0 +1,10 @@
+{% macro empty_state(message, icon="inbox") %}
+<div class="text-center text-secondary py-5">
+  <i class="bi bi-{{ icon }} fs-1 d-block mb-2"></i>
+  <p class="mb-0">{{ message }}</p>
+</div>
+{% endmacro %}
+
+{% macro error_alert(message) %}
+<div class="alert alert-danger" role="alert">{{ message }}</div>
+{% endmacro %}
