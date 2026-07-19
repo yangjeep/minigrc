@@ -98,6 +98,16 @@ itself does not guarantee complete or permanent Drive revision history
 (see the Drive Revisions API docs), so this app never relies on Drive as
 archival storage.
 
+## Architecture pivot (platform/production scale)
+
+Starting on `feat/platform-trust-center-pivot`, miniGRC's target deployment
+scale widens: Postgres, a worker process, Kubernetes/Helm, an external
+database connector interface, and a Trust Center become first-class scope
+— by explicit decision, not scope creep. See ADR #23 in
+`docs/decisions/architectural-decisions.md` for exactly what changes and
+what stays the same (single-tenant, binary admin/user roles, local session
+auth remain unchanged).
+
 ## Next PR candidates
 
 `feat/startup-compliance-operations` delivered evidence metadata + AWS
