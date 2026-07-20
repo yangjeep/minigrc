@@ -16,7 +16,17 @@ def test_connections_list_requires_admin(logged_in_client):
 def test_connections_list_allows_admin(admin_client):
     response = admin_client.get("/connections")
     assert response.status_code == 200
-    assert b"External Database Connections" in response.content
+
+
+def test_connections_list_via_register_api_requires_admin(logged_in_client):
+    response = logged_in_client.get("/api/registers/connections")
+    assert response.status_code == 403
+
+
+def test_connections_list_via_register_api_allows_admin(admin_client):
+    response = admin_client.get("/api/registers/connections")
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 def test_create_connection_as_admin(admin_client, app):

@@ -48,7 +48,7 @@ SECTIONS_REGISTER_CONFIG = RegisterConfig(
     model=TrustCenterSection,
     entity_type="trust_center_section",
     order_by=TrustCenterSection.display_order,
-    require_admin_for=frozenset({"create", "edit", "delete"}),
+    require_admin_for=frozenset({"list", "create", "edit", "delete"}),
     fields=(
         FieldSpec(name="title", type="text", required=True, max_length=255),
         FieldSpec(name="visibility", type="enum", choices=TRUST_CENTER_SECTION_VISIBILITY),

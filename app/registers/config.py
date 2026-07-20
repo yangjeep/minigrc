@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 FieldType = Literal["text", "number", "date", "bool", "enum"]
-RegisterAction = Literal["create", "edit", "delete"]
+RegisterAction = Literal["list", "create", "edit", "delete"]
 
 
 @dataclass(frozen=True)

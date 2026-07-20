@@ -37,6 +37,7 @@ CONNECTIONS_REGISTER_CONFIG = RegisterConfig(
     creatable=False,
     deletable=False,
     bulk_enabled=False,
+    require_admin_for=frozenset({"list"}),
     fields=(
         FieldSpec(name="name", type="text", read_only=True),
         FieldSpec(name="db_type", type="text", read_only=True),

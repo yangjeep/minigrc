@@ -77,6 +77,7 @@ def build_register_router(config: RegisterConfig) -> APIRouter:
     def list_rows(
         request: Request, db: Session = Depends(get_db), user: User = Depends(require_login)
     ) -> list[dict[str, Any]]:
+        _check_permission(config, "list", user)
         query = select(config.model).order_by(config.order_by)
         if config.scope_field is not None:
             scope_value = request.query_params.get(config.scope_field)
