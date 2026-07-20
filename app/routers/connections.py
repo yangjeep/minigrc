@@ -8,13 +8,16 @@ precedent (see docs/decisions/architectural-decisions.md #12).
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from sqlalchemy.orm import Session
 
+import app.connections  # noqa: F401 - import registers the connection_test job handler
 from app.audit import record_audit_event
-from app.connections import run_connection_test
 from app.deps import get_db, require_admin, verify_csrf
 from app.flash import redirect_with_flash
+from app.jobs import claim_specific_job, enqueue_job, run_job
 from app.models import (
     CONNECTION_DB_TYPES,
     CONNECTION_TLS_MODES,
@@ -235,7 +238,25 @@ def test_connection_route(
     conn = db.get(ExternalConnection, connection_id)
     if conn is None:
         raise HTTPException(status_code=404, detail="Connection not found")
-    settings = request.app.state.settings
-    result = run_connection_test(db, conn, key=settings.encryption_key, actor=request.state.user.email)
-    kind = "success" if result.status == "success" else "error"
-    return redirect_with_flash("/connections", f"Test {result.status}: {result.message}", kind=kind)
+
+    actor = request.state.user.email
+    job = enqueue_job(
+        db,
+        job_type="connection_test",
+        payload={"connection_id": connection_id, "actor": actor},
+        actor=actor,
+    )
+    db.flush()
+    claimed = claim_specific_job(db, job.id, worker_id="inline")
+    if claimed is not None:
+        run_job(db, claimed, actor=actor)
+        db.flush()
+        job = claimed
+
+    if job.status == "succeeded":
+        result = json.loads(job.result_json)
+        kind = "success" if result["status"] == "success" else "error"
+        return redirect_with_flash("/connections", f"Test {result['status']}: {result['message']}", kind=kind)
+    return redirect_with_flash(
+        "/connections", f"Test job {job.status}: {job.error_message or 'queued for the worker'}", kind="error"
+    )

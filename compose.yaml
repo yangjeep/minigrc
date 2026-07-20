@@ -18,5 +18,19 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  worker:
+    build: .
+    command: python -m app.worker
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      GRC_DATA_DIR: /data
+    volumes:
+      - grc_data:/data
+    restart: unless-stopped
+    depends_on:
+      - app
+
 volumes:
   grc_data:
