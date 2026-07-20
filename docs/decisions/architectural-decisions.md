@@ -437,6 +437,32 @@ subsystem (Postgres, worker, connector interface, Helm chart, grid
 framework) gets its own dedicated ADR entry as it ships, rather than this
 entry pre-specifying implementation details it doesn't yet have.
 
+## 24. Library and security choices for the platform pivot's remaining subsystems
+
+**Decision:** Postgres via `psycopg[binary]` (psycopg3, SQLAlchemy 2.0
+dialect `postgresql+psycopg`). MySQL/MariaDB via `pymysql` (pure Python,
+no system client library). Microsoft SQL Server deferred — `pyodbc`
+requires a system-level ODBC driver install, which would destabilize CI
+and the Docker build for a database no current feature requires; revisit
+if a real MSSQL evidence source appears. External-secret encryption
+reuses `app/crypto.py`'s existing Fernet implementation
+(`GRC_ENCRYPTION_KEY`) rather than introducing new cryptography, extended
+into a generic `Secret` model shared by connections and future
+integrations. Background jobs use a database-backed job table + polling
+worker process — no Redis, since Postgres is already the target
+production database from this same pivot and this app's job volume
+(imports, connection tests) doesn't need a dedicated broker.
+
+**Rationale:** Every choice here either reuses something the codebase
+already has (Fernet encryption, SQLAlchemy portable column types) or
+avoids adding a service/dependency this app's actual scale doesn't need
+(Redis, ODBC system packages). See the architecture checkpoint posted to
+issue #5 for the full security-boundary and threat-model writeup this
+ADR summarizes.
+
+**Supersedes:** Nothing — implements the specific subsystems ADR #23
+named without pre-specifying.
+
 **Supersedes:** The scale-framing portion of decision #1 and the
 single-tenant *scale* assumption in `docs/product-scope.md`. Does not
 supersede any auth, audit, CSRF, id-generation, or immutability decision
