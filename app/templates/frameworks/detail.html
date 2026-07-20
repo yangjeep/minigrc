@@ -27,46 +27,8 @@
 </div>
 
 <h2>Requirements</h2>
-<form method="get" action="/frameworks/{{ framework.id }}" class="filter-form">
-  <label>Search <input type="text" name="q" value="{{ q }}" placeholder="reference or title"></label>
-  <label>Applicable
-    <select name="applicable">
-      <option value="">All</option>
-      <option value="yes" {% if selected_applicable=="yes" %}selected{% endif %}>Yes</option>
-      <option value="no" {% if selected_applicable=="no" %}selected{% endif %}>No</option>
-    </select>
-  </label>
-  <label>Status
-    <select name="state">
-      <option value="">All</option>
-      {% for s in implementation_states %}
-      <option value="{{ s }}" {% if selected_state==s %}selected{% endif %}>{{ s }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <button type="submit">Filter</button>
-</form>
-
-<table>
-  <thead>
-    <tr><th>Reference</th><th>Title</th><th>Applicable</th><th>Status</th><th>Owner</th><th>Last reviewed</th></tr>
-  </thead>
-  <tbody>
-    {% for requirement in requirements %}
-    {% set a = requirement.assessment %}
-    <tr>
-      <td><a href="/frameworks/{{ framework.id }}/requirements/{{ requirement.id }}">{{ requirement.reference_code }}</a></td>
-      <td>{{ requirement.title }}</td>
-      <td>{{ a.applicable if a else "—" }}</td>
-      <td>{% if a %}<span class="badge badge-{{ a.implementation_state }}">{{ a.implementation_state }}</span>{% endif %}</td>
-      <td>{{ a.owner if a else "" }}</td>
-      <td>{{ a.last_reviewed_at.strftime("%Y-%m-%d") if a and a.last_reviewed_at else "never" }}</td>
-    </tr>
-    {% else %}
-    <tr><td colspan="6">No requirements match.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+<p class="lede">Reference/title/summary/order are editable inline — use each column header's filter to search. Applicable/status/owner are read-only here since marking a requirement not applicable requires a note — change those from the requirement's detail page (click its reference code).</p>
+<div id="requirements-grid"></div>
 
 <h2>Add requirements</h2>
 <p><a href="/frameworks/{{ framework.id }}/requirements/new">+ Add one manually</a></p>
@@ -77,4 +39,30 @@
   </label>
   <button type="submit">Import CSV</button>
 </form>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="/static/vendor/tabulator-6.3.1/tabulator.min.css">
+<script src="/static/vendor/tabulator-6.3.1/tabulator.min.js"></script>
+<script src="/static/js/register-grid.js"></script>
+<script>
+  RegisterGrid.init("requirements-grid", {
+    apiBase: "/api/registers/framework-requirements",
+    listUrl: "/api/registers/framework-requirements?framework_id={{ framework.id }}",
+    csrfToken: "{{ csrf_token(request) }}",
+    deletable: false,
+    emptyMessage: "No requirements yet. Add one manually or import a CSV below.",
+    columns: [
+      {title: "Reference", field: "reference_code", editor: "input", headerFilter: "input",
+       formatter: "link",
+       formatterParams: {url: function(cell) { return "/frameworks/{{ framework.id }}/requirements/" + cell.getData().id; }}},
+      {title: "Title", field: "title", editor: "input", headerFilter: "input"},
+      {title: "Summary", field: "summary", editor: "input"},
+      {title: "Order", field: "display_order", editor: "number", hozAlign: "center", width: 90},
+      {title: "Applicable", field: "applicable", editor: false},
+      {title: "Status", field: "implementation_state", editor: false},
+      {title: "Owner", field: "owner", editor: false}
+    ]
+  });
+</script>
 {% endblock %}
