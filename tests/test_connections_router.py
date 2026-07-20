@@ -69,6 +69,47 @@ def test_create_connection_rejects_mismatched_csrf(admin_client):
     assert response.status_code == 400
 
 
+def test_connection_test_route_runs_through_job_system(admin_client, app):
+    app.state.settings.encryption_key = TEST_KEY
+    page = admin_client.get("/connections/new")
+    csrf_token = extract_csrf_token(page.text)
+    admin_client.post(
+        "/connections",
+        data={
+            "name": "job-test-connection",
+            "db_type": "postgres",
+            "host": "127.0.0.1",
+            "port": "59999",  # unreachable — bounded failure path
+            "username": "reader",
+            "secret_value": "s3cret",
+            "csrf_token": csrf_token,
+        },
+    )
+    with app.state.session_factory() as session:
+        conn = session.query(ExternalConnection).filter_by(name="job-test-connection").one()
+        connection_id = conn.id
+
+    edit_page = admin_client.get(f"/connections/{connection_id}/edit")
+    csrf_token = extract_csrf_token(edit_page.text)
+    response = admin_client.post(
+        f"/connections/{connection_id}/test",
+        data={"csrf_token": csrf_token},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert "Test" in response.headers["location"]
+
+    with app.state.session_factory() as session:
+        from app.models import Job
+
+        jobs = session.query(Job).filter_by(job_type="connection_test").all()
+        assert len(jobs) == 1
+        assert jobs[0].status == "succeeded"  # the *job* succeeded even though the connection test failed
+        assert "s3cret" not in jobs[0].result_json
+        conn = session.get(ExternalConnection, connection_id)
+        assert conn.last_test_status == "failure"
+
+
 def test_connection_list_never_exposes_secret_value(admin_client, app):
     app.state.settings.encryption_key = TEST_KEY
     page = admin_client.get("/connections/new")
