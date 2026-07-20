@@ -94,6 +94,35 @@ SQLite file (GRC_DATA_DIR/grc.db)   Policy files (GRC_DATA_DIR/policies/<id>/<ve
   the caller resolved, so dev, tests, and Docker all go through the exact
   same code path. See `docs/decisions/architectural-decisions.md`.
 
+### SQLite vs. PostgreSQL
+
+- SQLite (the default) is fully supported for local development, demos,
+  and lightweight single-instance deployments — it is not deprecated by
+  adding Postgres support (see ADR #23/#24).
+- Set `DATABASE_URL` (standard unprefixed env var, e.g.
+  `postgresql+psycopg://user:pass@host:5432/dbname`) to run against
+  Postgres instead — this is the recommended production database.
+  `app/db.py::build_engine` picks the dialect from the URL and only
+  attaches SQLite's `PRAGMA` connection listener for the sqlite dialect.
+  An explicit `database_path`/`data_dir` passed to `create_app` (always
+  the case in tests, per CLAUDE.md constraint #10) overrides
+  `DATABASE_URL`, so tests are never accidentally pointed at a real
+  Postgres target.
+- Model column types are all portable SQLAlchemy types (`String`, `Text`,
+  `DateTime`, `CheckConstraint`) with no SQLite-specific raw SQL outside
+  `build_engine`'s pragma listener, and migrations already use
+  `op.batch_alter_table` (required for SQLite's ALTER limitations, and a
+  harmless no-op-wrapper on Postgres) — so no separate migration branches
+  are needed per dialect.
+- Migrating existing SQLite data to Postgres is not automated by this
+  app — use a standard ETL/dump-and-load tool (e.g. `pgloader`) against
+  the SQLite file, then run `python -m app.cli migrate` against the
+  target `DATABASE_URL` to confirm the schema matches head.
+- CI runs the full suite against SQLite plus a dedicated
+  `test-postgres` job (a `postgres:16` service container) that applies
+  migrations and does a round-trip write/read against a live Postgres —
+  see `.github/workflows/ci.yml` and `tests/test_postgres_compat.py`.
+
 ## Authentication
 
 - `app/models.py::User` / `UserSession`, `app/security.py`,
