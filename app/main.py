@@ -71,12 +71,18 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
         effective_database_path = (
             database_path if database_path is not None else f"{effective_data_dir}/grc.db"
         )
+        # An explicit database_path/data_dir always wins over DATABASE_URL —
+        # this is how tests guarantee isolation from a real target database
+        # (see CLAUDE.md constraint #10).
         settings = settings.model_copy(
-            update={"data_dir": effective_data_dir, "database_path": effective_database_path}
+            update={
+                "data_dir": effective_data_dir,
+                "database_path": effective_database_path,
+                "database_url": "",
+            }
         )
 
-    resolved_path = settings.resolved_database_path
-    engine = build_engine(resolved_path)
+    engine = build_engine(settings.resolved_engine_target)
     init_db(engine)
     session_factory = make_session_factory(engine)
 
