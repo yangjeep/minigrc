@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Iterator
+from urllib.parse import urlencode
 
 from fastapi import Depends, Form, HTTPException, Request
 from sqlalchemy import select
@@ -26,12 +27,19 @@ def get_db(request: Request) -> Iterator[Session]:
         session.close()
 
 
-def _redirect_to_login() -> HTTPException:
-    return HTTPException(status_code=303, headers={"Location": "/login"})
+def _redirect_to_login(message: str | None = None) -> HTTPException:
+    location = "/login"
+    if message:
+        location = f"/login?{urlencode({'flash': message, 'flash_kind': 'error'})}"
+    return HTTPException(status_code=303, headers={"Location": location})
 
 
 def require_login(request: Request, db: Session = Depends(get_db)) -> User:
-    """Require a valid, unexpired, unrevoked session; redirect to /login otherwise."""
+    """Require a valid, unexpired, unrevoked session for an active user; redirect to /login otherwise.
+
+    Checked on every request (not just at login) so disabling a user takes
+    effect immediately even against an already-issued session cookie.
+    """
     raw_token = request.cookies.get(SESSION_COOKIE_NAME)
     if not raw_token:
         raise _redirect_to_login()
@@ -51,6 +59,8 @@ def require_login(request: Request, db: Session = Depends(get_db)) -> User:
     user = db.get(User, user_session.user_id)
     if user is None:
         raise _redirect_to_login()
+    if user.status != "active":
+        raise _redirect_to_login("Your account is no longer active. Contact an administrator.")
 
     request.state.user = user
     request.state.user_session = user_session

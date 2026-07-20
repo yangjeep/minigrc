@@ -77,6 +77,12 @@ def login_submit(
         logger.info("login failed for %s", normalized)
         return redirect_with_flash("/login", "Invalid email or password.", kind="error")
 
+    if user.status != "active":
+        logger.info("login rejected for %s: status=%s", normalized, user.status)
+        return redirect_with_flash(
+            "/login", "Your account is no longer active. Contact an administrator.", kind="error"
+        )
+
     settings = request.app.state.settings
     record_audit_event(
         db,

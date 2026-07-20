@@ -139,3 +139,53 @@ def test_normalized_email_is_unique(app):
 
         exists = session.scalar(select(User).where(User.email == "person@example.com"))
         assert exists is not None
+
+
+def test_disabled_user_login_rejected(client, app, test_user):
+    with app.state.session_factory() as session:
+        user = session.get(User, test_user.id)
+        user.status = "disabled"
+        session.commit()
+
+    login_page = client.get("/login")
+    csrf_token = extract_csrf_token(login_page.text)
+    response = client.post(
+        "/login",
+        data={"email": TEST_EMAIL, "password": TEST_PASSWORD, "csrf_token": csrf_token},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/login")
+    assert "session" not in response.cookies
+
+
+def test_pending_user_login_rejected(client, app, test_user):
+    with app.state.session_factory() as session:
+        user = session.get(User, test_user.id)
+        user.status = "pending"
+        session.commit()
+
+    login_page = client.get("/login")
+    csrf_token = extract_csrf_token(login_page.text)
+    response = client.post(
+        "/login",
+        data={"email": TEST_EMAIL, "password": TEST_PASSWORD, "csrf_token": csrf_token},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/login")
+    assert "session" not in response.cookies
+
+
+def test_disabling_user_mid_session_revokes_access_immediately(logged_in_client, app, test_user):
+    still_ok = logged_in_client.get("/frameworks", follow_redirects=False)
+    assert still_ok.status_code == 200
+
+    with app.state.session_factory() as session:
+        user = session.get(User, test_user.id)
+        user.status = "disabled"
+        session.commit()
+
+    response = logged_in_client.get("/frameworks", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/login")
