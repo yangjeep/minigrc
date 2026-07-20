@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Trust Center · minigrc{% endblock %}
+{% block content %}
+<h1>Trust Center administration</h1>
+<p class="text-secondary">
+  Manage the public Trust Center's settings and content sections. The public,
+  unauthenticated page itself is a separate feature — this area is admin-only.
+</p>
+
+<h2>Settings</h2>
+<form method="post" action="/trust-center/admin/settings" class="row g-3" style="max-width: 640px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
+  <div class="col-12 form-check">
+    <input class="form-check-input" type="checkbox" id="enabled" name="enabled" value="true" {% if settings.enabled %}checked{% endif %}>
+    <label class="form-check-label" for="enabled">Enabled</label>
+    <div class="form-text">Controls whether the public route will respond once it exists.</div>
+  </div>
+
+  <div class="col-12">
+    <label class="form-label" for="title">Title</label>
+    <input class="form-control" type="text" id="title" name="title" value="{{ settings.title }}" required>
+  </div>
+
+  <div class="col-12">
+    <label class="form-label" for="intro_markdown">Intro copy (Markdown)</label>
+    <textarea class="form-control" id="intro_markdown" name="intro_markdown" rows="4">{{ settings.intro_markdown }}</textarea>
+  </div>
+
+  <div class="col-12">
+    <label class="form-label" for="contact_email">Contact email</label>
+    <input class="form-control" type="email" id="contact_email" name="contact_email" value="{{ settings.contact_email }}">
+  </div>
+
+  <div class="col-12">
+    <label class="form-label" for="support_url">Support URL</label>
+    <input class="form-control" type="url" id="support_url" name="support_url" value="{{ settings.support_url }}">
+  </div>
+
+  <div class="col-12">
+    <button type="submit" class="btn btn-primary">Save settings</button>
+  </div>
+</form>
+
+<h2 class="mt-4">Sections</h2>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <p class="text-secondary mb-0">Click a title to edit body content, dates, links, and publish state.</p>
+  <button type="button" id="sections-add-row" class="btn btn-primary">
+    <i class="bi bi-plus-lg me-1"></i>Add section
+  </button>
+</div>
+<div id="sections-grid"></div>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="/static/vendor/tabulator-6.3.1/tabulator.min.css">
+<script src="/static/vendor/tabulator-6.3.1/tabulator.min.js"></script>
+<script src="/static/js/register-grid.js"></script>
+<script>
+  RegisterGrid.init("sections-grid", {
+    apiBase: "/api/registers/trust-center-sections",
+    csrfToken: "{{ csrf_token(request) }}",
+    addRowButtonId: "sections-add-row",
+    emptyMessage: "No sections yet. Use \"Add section\" to create one.",
+    newRowDefaults: {
+      title: "New section",
+      visibility: "internal",
+      display_order: 0
+    },
+    columns: [
+      {title: "Title", field: "title", editor: "input", formatter: "link",
+       formatterParams: {url: function(cell) { return "/trust-center/admin/sections/" + cell.getData().id; }}},
+      {title: "Visibility", field: "visibility", editor: "list",
+       editorParams: {values: {{ visibility_values | list | tojson }}}},
+      {title: "Order", field: "display_order", editor: "number", hozAlign: "center"},
+      {title: "Status", field: "status", editor: false},
+      {title: "Framework", field: "linked_framework_name", editor: false},
+      {title: "Policy", field: "linked_policy_title", editor: false},
+      {title: "Stale", field: "stale", editor: false, hozAlign: "center", formatter: "tickCross"}
+    ]
+  });
+</script>
+{% endblock %}

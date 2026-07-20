@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Preview: {{ section.title }} · Trust Center · minigrc{% endblock %}
+{% block content %}
+<p><a href="/trust-center/admin/sections/{{ section.id }}">&larr; Back to editor</a></p>
+<div class="alert alert-info" role="status">
+  Admin preview only — this approximates what a public visitor would see once
+  published. It is not served to unauthenticated visitors.
+</div>
+<h1>{{ section.title }}</h1>
+<div>{{ rendered_html | safe }}</div>
+{% endblock %}

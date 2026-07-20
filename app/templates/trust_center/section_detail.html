@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ section.title }} · Trust Center · minigrc{% endblock %}
+{% block content %}
+<p><a href="/trust-center/admin">&larr; Trust Center</a></p>
+<h1>{{ section.title }}</h1>
+<p>
+  <strong>Visibility:</strong> {{ section.visibility }} &middot;
+  <strong>Status:</strong> <span class="badge {{ 'text-bg-success' if section.status == 'published' else 'text-bg-secondary' }}">{{ section.status }}</span>
+  {% if section.published_at %}&middot; <strong>Last published:</strong> {{ section.published_at.strftime("%Y-%m-%d %H:%M UTC") }}{% endif %}
+</p>
+
+{% if is_stale %}
+<div class="alert alert-warning" role="status">
+  This published section is stale — its review or expiry date has passed. Update the content and republish, or unpublish it.
+</div>
+{% endif %}
+
+<h2>Draft content</h2>
+<form method="post" action="/trust-center/admin/sections/{{ section.id }}" class="row g-3" style="max-width: 720px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
+  <div class="col-12">
+    <label class="form-label" for="draft_body_markdown">Body (Markdown)</label>
+    <textarea class="form-control" id="draft_body_markdown" name="draft_body_markdown" rows="10">{{ section.draft_body_markdown }}</textarea>
+  </div>
+
+  <div class="col-6">
+    <label class="form-label" for="review_date">Review date</label>
+    <input class="form-control" type="date" id="review_date" name="review_date" value="{{ section.review_date or '' }}">
+  </div>
+  <div class="col-6">
+    <label class="form-label" for="expiry_date">Expiry date</label>
+    <input class="form-control" type="date" id="expiry_date" name="expiry_date" value="{{ section.expiry_date or '' }}">
+  </div>
+
+  <div class="col-6">
+    <label class="form-label" for="linked_framework_id">Linked framework</label>
+    <select class="form-select" id="linked_framework_id" name="linked_framework_id">
+      <option value="">—</option>
+      {% for framework in frameworks %}
+      <option value="{{ framework.id }}" {% if section.linked_framework_id == framework.id %}selected{% endif %}>{{ framework.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-6">
+    <label class="form-label" for="linked_policy_id">Linked policy</label>
+    <select class="form-select" id="linked_policy_id" name="linked_policy_id">
+      <option value="">—</option>
+      {% for policy in policies %}
+      <option value="{{ policy.id }}" {% if section.linked_policy_id == policy.id %}selected{% endif %}>{{ policy.title }} ({{ policy.status }})</option>
+      {% endfor %}
+    </select>
+    <div class="form-text">Only "approved" policies are ever eligible for public download.</div>
+  </div>
+
+  <div class="col-12 d-flex gap-2">
+    <button type="submit" class="btn btn-primary">Save draft</button>
+    <a href="/trust-center/admin/sections/{{ section.id }}/preview" class="btn btn-outline-secondary">Preview</a>
+  </div>
+</form>
+
+<div class="d-flex gap-2 mt-4">
+  {% if section.status == "published" %}
+  <form method="post" action="/trust-center/admin/sections/{{ section.id }}/unpublish">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <button type="submit" class="btn btn-outline-danger">Unpublish</button>
+  </form>
+  {% else %}
+  <form method="post" action="/trust-center/admin/sections/{{ section.id }}/publish">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <button type="submit" class="btn btn-success">Publish</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
