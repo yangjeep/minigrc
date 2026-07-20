@@ -32,7 +32,7 @@ JOBS_REGISTER_CONFIG = RegisterConfig(
     creatable=False,
     deletable=False,
     bulk_enabled=False,
-    require_admin_for=frozenset({"list"}),
+    require_admin_for=frozenset({"list", "edit"}),
     fields=(
         FieldSpec(name="job_type", type="text", read_only=True),
         FieldSpec(name="status", type="text", read_only=True),

@@ -43,7 +43,8 @@ without duplicating tools that already do their job well.
 
 | Area | Status (this PR) | Source of truth |
 |------|-------------------|------------------|
-| Authentication | Implemented — local email/password, server-side sessions, optional Google OIDC login | Internal (this app), identity optionally asserted by Google |
+| Authentication | Implemented — local email/password (break-glass), Google OAuth as the only SSO path with an Admin-configurable first-login policy (auto-provision vs. admin-approved pending accounts), user status (active/disabled/pending) | Internal (this app), identity optionally asserted by Google |
+| Admin & IAM | Implemented — dedicated Admin area (Users, Connections, Authentication, Jobs, Audit Log), server-side `require_admin` on every route | Internal (this app) |
 | Frameworks / Requirements | Implemented — checklist, manual add, CSV import | Internal (this app), seeded with placeholder content |
 | Requirement assessments & notes | Implemented — applicable/state/owner, append-only notes, audit history | Internal (this app) |
 | Policies | Implemented — versioned PDF/DOCX repository, review dates, optional Google Drive source association + capture + approval history | Internal (this app), optionally sourced from Google Drive |
@@ -51,12 +52,12 @@ without duplicating tools that already do their job well.
 | Risks | Implemented — structured register, validated bounds | Internal (this app) |
 | Evidence | Implemented — immutable snapshots, maps to requirements/controls | Internal (this app), sourced from AWS today |
 | AWS connector | Implemented — CloudTrail logging posture + basic IAM hygiene evidence, not a CSPM | External — AWS (ambient credentials or AssumeRole; never stores long-lived keys) |
-| Audit Log | Implemented — real event history | Internal (this app) |
+| Audit Log | Implemented — real event history, admin-only, under Admin | Internal (this app) |
+| Connections | Implemented — unified Metabase-style index (external DB connections, AWS, Google Drive) under Admin | Internal (this app), sources are external systems |
 | People directory | Implemented — manual entries; optional Google Workspace Directory sync | Internal (this app), optionally synced from Google Workspace |
 | Vendor/System register | Implemented — one record per purchased/used system, operational flags, renewals view | Internal (this app) |
 | Vendor roster snapshots | Implemented — append-only CSV import per vendor, delta view, Person matching, admin-only linking | Internal (this app), sourced from the vendor's own export |
 | Actions (corrective actions / exceptions) | Placeholder page only | External — Asana |
-| Connectors (GitHub, Azure, Asana) | Placeholder page only | External systems; this app will store results |
 | Trust Center | Implemented — admin (settings, sections, publish/unpublish, preview) and public unauthenticated route (published-only content, gated policy downloads) | Internal — curated subset of this app's data |
 | Vulnerabilities | Out of scope, intentionally | External — Aikido |
 

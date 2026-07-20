@@ -18,6 +18,16 @@ def test_users_list_shows_existing_users(admin_client, test_user):
     assert TEST_EMAIL in response.text
 
 
+def test_users_register_api_edit_requires_admin(logged_in_client, test_user):
+    headers = {"X-CSRF-Token": logged_in_client.cookies.get("csrf_token")}
+    response = logged_in_client.patch(
+        f"/api/registers/admin_users/{test_user.id}",
+        json={"fields": {}, "expected_updated_at": None},
+        headers=headers,
+    )
+    assert response.status_code == 403
+
+
 def test_new_user_form_requires_admin(logged_in_client):
     response = logged_in_client.get("/admin/users/new")
     assert response.status_code == 403

@@ -8,14 +8,10 @@ from tests.conftest import extract_csrf_token
 TEST_KEY = "6Vj0P8sJxG2h6y3Q9kZfXqW1mN4bR7tL0pC5dE8aFgs="
 
 
-def test_connections_list_requires_admin(logged_in_client):
+def test_legacy_connections_list_redirects(logged_in_client):
     response = logged_in_client.get("/connections", follow_redirects=False)
-    assert response.status_code == 403
-
-
-def test_connections_list_allows_admin(admin_client):
-    response = admin_client.get("/connections")
-    assert response.status_code == 200
+    assert response.status_code == 308
+    assert response.headers["location"] == "/admin/connections"
 
 
 def test_connections_list_via_register_api_requires_admin(logged_in_client):

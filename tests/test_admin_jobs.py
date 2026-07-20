@@ -28,3 +28,18 @@ def test_jobs_register_api_shows_enqueued_job(admin_client, app):
 def test_jobs_register_api_requires_admin(logged_in_client):
     response = logged_in_client.get("/api/registers/admin_jobs")
     assert response.status_code == 403
+
+
+def test_jobs_register_api_edit_requires_admin(logged_in_client, app):
+    with app.state.session_factory() as session:
+        job = enqueue_job(session, job_type="connection_test", payload={}, actor="admin")
+        session.commit()
+        job_id = job.id
+
+    headers = {"X-CSRF-Token": logged_in_client.cookies.get("csrf_token")}
+    response = logged_in_client.patch(
+        f"/api/registers/admin_jobs/{job_id}",
+        json={"fields": {}, "expected_updated_at": None},
+        headers=headers,
+    )
+    assert response.status_code == 403

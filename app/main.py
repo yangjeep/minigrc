@@ -24,6 +24,7 @@ from app.logging_config import configure_logging
 from app.routers import (
     admin,
     admin_authentication,
+    admin_connections,
     admin_jobs,
     admin_users,
     audit_log,
@@ -61,8 +62,6 @@ NAV_ITEMS = [
     ("People", "/people"),
     ("Vendors", "/vendors"),
     ("Actions", "/actions"),
-    ("Connectors", "/connectors"),
-    ("Connections", "/connections"),
     ("Trust Center", "/trust-center/admin"),
 ]
 
@@ -70,6 +69,7 @@ NAV_ITEMS = [
 # Jobs, Audit Log, Settings) — same (label, href) shape as NAV_ITEMS.
 ADMIN_NAV_ITEMS: list[tuple[str, str]] = [
     ("Users", "/admin/users"),
+    ("Connections", "/admin/connections"),
     ("Authentication", "/admin/authentication/google"),
     ("Jobs", "/admin/jobs"),
     ("Audit Log", "/admin/audit-log"),
@@ -153,6 +153,7 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
     app.include_router(aws_connector.router)
     app.include_router(connections.router)
     app.include_router(connections.connections_register_router)
+    app.include_router(admin_connections.legacy_router)
     app.include_router(evidence.router)
     app.include_router(trust_center.router)
     app.include_router(trust_center.sections_register_router)
@@ -165,6 +166,7 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
     app.include_router(admin_jobs.router)
     app.include_router(admin_jobs.jobs_register_router)
     app.include_router(admin_authentication.router)
+    app.include_router(admin_connections.router)
     # placeholders.router registers a catch-all "/{slug}" — it must be
     # included last so it never shadows a more specific route above.
     app.include_router(placeholders.router)
