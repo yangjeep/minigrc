@@ -827,6 +827,49 @@ class Job(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+IMPORT_SOURCES = ("web", "cli", "watched_directory")
+IMPORT_JOB_STATUSES = ("pending", "validating", "importing", "completed", "rejected")
+
+
+class ImportJob(Base):
+    """A record of one attempted import — web upload, CLI, or (Feature 9)
+    watched-directory — through app/imports.py's shared importer registry.
+
+    Always all-or-nothing: `records_created` is 0 whenever `status` is
+    "rejected" (see app/imports.py::run_import, which never writes a
+    partial import). `checksum_sha256` makes re-running the exact same
+    file a safe no-op (see the idempotency check in run_import) rather
+    than a duplicate import.
+    """
+
+    __tablename__ = "import_jobs"
+    __table_args__ = (
+        CheckConstraint(f"source IN {IMPORT_SOURCES}", name="ck_import_job_source"),
+        CheckConstraint(f"status IN {IMPORT_JOB_STATUSES}", name="ck_import_job_status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    importer_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(512), default="")
+    file_size: Mapped[int] = mapped_column(default=0)
+    checksum_sha256: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    entity_type: Mapped[str] = mapped_column(String(64), default="")
+    target_json: Mapped[str] = mapped_column(Text, default="{}")
+    records_discovered: Mapped[int] = mapped_column(default=0)
+    records_created: Mapped[int] = mapped_column(default=0)
+    records_updated: Mapped[int] = mapped_column(default=0)
+    records_skipped: Mapped[int] = mapped_column(default=0)
+    records_rejected: Mapped[int] = mapped_column(default=0)
+    validation_errors_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    processing_errors_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class AuditEvent(Base):
     """Append-only record of who changed what, for auditor-facing history.
 
