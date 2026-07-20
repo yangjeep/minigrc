@@ -37,6 +37,7 @@ from app.routers import (
     policies,
     risks,
     trust_center,
+    trust_center_public,
     vendor_systems,
 )
 from app.security import CSRF_COOKIE_NAME, new_csrf_token
@@ -142,6 +143,7 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
     app.include_router(evidence.router)
     app.include_router(trust_center.router)
     app.include_router(trust_center.sections_register_router)
+    app.include_router(trust_center_public.router)
     app.include_router(audit_log.router)
     # placeholders.router registers a catch-all "/{slug}" — it must be
     # included last so it never shadows a more specific route above.
