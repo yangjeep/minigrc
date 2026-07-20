@@ -20,6 +20,25 @@
     container.prepend(alertBox);
   }
 
+  // Shared polite live region so screen-reader users get a spoken
+  // confirmation on successful edits/adds — Tabulator's own DOM updates
+  // are otherwise silent (SC 4.1.3 Status Messages).
+  function announce(container, message) {
+    var region = container.querySelector("[data-register-grid-status]");
+    if (!region) {
+      region = document.createElement("div");
+      region.setAttribute("data-register-grid-status", "true");
+      region.setAttribute("aria-live", "polite");
+      region.className = "visually-hidden";
+      container.appendChild(region);
+    }
+    region.textContent = message;
+  }
+
+  function rowLabel(data) {
+    return data.title || data.name || "row";
+  }
+
   function errorMessage(payload) {
     if (!payload) return "Save failed.";
     if (typeof payload.detail === "string") return payload.detail;
@@ -63,25 +82,32 @@
     var actionColumns = deletable
       ? [
           {
-            title: "",
+            title: "Actions",
             field: "_actions",
             headerSort: false,
+            headerHozAlign: "center",
             width: 60,
-            formatter: function () {
-              return '<button type="button" class="btn btn-sm btn-outline-danger" data-action="delete">Delete</button>';
+            formatter: function (cell) {
+              var label = "Delete " + rowLabel(cell.getRow().getData());
+              return (
+                '<button type="button" class="btn btn-sm btn-outline-danger" data-action="delete" aria-label="' +
+                label.replace(/"/g, "&quot;") +
+                '">Delete</button>'
+              );
             },
             cellClick: function (e, cell) {
               var target = e.target.closest("[data-action='delete']");
               if (!target) return;
               var row = cell.getRow();
               var data = row.getData();
-              if (!window.confirm("Delete this row?")) return;
+              if (!window.confirm("Delete " + rowLabel(data) + "?")) return;
               jsonFetch(config.apiBase + "/" + data.id, {
                 method: "DELETE",
                 headers: { "X-CSRF-Token": config.csrfToken },
               }).then(function (res) {
                 if (res.ok) {
                   row.delete();
+                  announce(container, rowLabel(data) + " deleted.");
                 } else {
                   showAlert(container, errorMessage(res.body), "danger");
                 }
@@ -116,6 +142,7 @@
       }).then(function (res) {
         if (res.ok) {
           row.update(res.body);
+          announce(container, field + " saved for " + rowLabel(res.body) + ".");
         } else {
           cell.restoreOldValue();
           showAlert(container, errorMessage(res.body), "danger");
@@ -134,6 +161,7 @@
           }).then(function (res) {
             if (res.ok) {
               table.addRow(res.body, true);
+              announce(container, rowLabel(res.body) + " added.");
             } else {
               showAlert(container, errorMessage(res.body), "danger");
             }

@@ -186,7 +186,10 @@ def preview_section(section_id: str, request: Request, db: Session = Depends(get
     return templates.TemplateResponse(
         request,
         "trust_center/section_preview.html",
-        {"section": section, "rendered_html": render_markdown_safe(section.draft_body_markdown)},
+        {
+            "section": section,
+            "rendered_html": render_markdown_safe(section.draft_body_markdown, heading_offset=1),
+        },
     )
 
 

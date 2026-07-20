@@ -43,3 +43,20 @@ def test_allows_safe_links_and_lists():
 def test_empty_input_renders_empty_string():
     assert render_markdown_safe("") == ""
     assert render_markdown_safe(None) == ""
+
+
+def test_heading_offset_shifts_heading_levels():
+    html = render_markdown_safe("# Title\n\n## Subtitle", heading_offset=2)
+    assert "<h3>Title</h3>" in html
+    assert "<h4>Subtitle</h4>" in html
+
+
+def test_heading_offset_clamps_at_h6():
+    html = render_markdown_safe("##### Deep\n\n###### Deeper", heading_offset=2)
+    assert "<h6>Deep</h6>" in html
+    assert "<h6>Deeper</h6>" in html
+
+
+def test_default_heading_offset_is_zero():
+    html = render_markdown_safe("# Title")
+    assert "<h1>Title</h1>" in html
