@@ -21,6 +21,8 @@ from sqlalchemy.engine import URL
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
+from app.config import get_settings
+from app.jobs import register_handler
 from app.models import ExternalConnection
 from app.secrets import resolve_secret
 
@@ -101,3 +103,24 @@ def run_connection_test(
         actor=actor,
     )
     return result
+
+
+def _connection_test_job_handler(session: Session, payload: dict) -> dict:
+    """Job handler for job_type="connection_test" — registered on import.
+
+    A test that reaches a real (if unreachable) database is a *successful*
+    job (it did its job: ran the test and recorded the outcome) even when
+    the connection itself reports "failure" — only a job-infrastructure
+    problem (unknown connection id) should trigger a job retry.
+    """
+    conn = session.get(ExternalConnection, payload["connection_id"])
+    if conn is None:
+        raise ConnectionTestError(f"connection {payload['connection_id']} not found")
+    settings = get_settings()
+    result = run_connection_test(
+        session, conn, key=settings.encryption_key, actor=payload.get("actor", "worker")
+    )
+    return {"status": result.status, "message": result.message}
+
+
+register_handler("connection_test", _connection_test_job_handler)
