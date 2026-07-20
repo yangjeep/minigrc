@@ -59,41 +59,45 @@
     if (!container) return null;
 
     var csrfHeaders = { "Content-Type": "application/json", "X-CSRF-Token": config.csrfToken };
+    var deletable = config.deletable !== false;
+    var actionColumns = deletable
+      ? [
+          {
+            title: "",
+            field: "_actions",
+            headerSort: false,
+            width: 60,
+            formatter: function () {
+              return '<button type="button" class="btn btn-sm btn-outline-danger" data-action="delete">Delete</button>';
+            },
+            cellClick: function (e, cell) {
+              var target = e.target.closest("[data-action='delete']");
+              if (!target) return;
+              var row = cell.getRow();
+              var data = row.getData();
+              if (!window.confirm("Delete this row?")) return;
+              jsonFetch(config.apiBase + "/" + data.id, {
+                method: "DELETE",
+                headers: { "X-CSRF-Token": config.csrfToken },
+              }).then(function (res) {
+                if (res.ok) {
+                  row.delete();
+                } else {
+                  showAlert(container, errorMessage(res.body), "danger");
+                }
+              });
+            },
+          },
+        ]
+      : [];
 
     var table = new Tabulator("#" + containerId, {
-      ajaxURL: config.apiBase,
+      ajaxURL: config.listUrl || config.apiBase,
       ajaxConfig: "GET",
       layout: "fitColumns",
       placeholder: config.emptyMessage || "No rows yet.",
       selectableRows: true,
-      columns: (config.columns || []).concat([
-        {
-          title: "",
-          field: "_actions",
-          headerSort: false,
-          width: 60,
-          formatter: function () {
-            return '<button type="button" class="btn btn-sm btn-outline-danger" data-action="delete">Delete</button>';
-          },
-          cellClick: function (e, cell) {
-            var target = e.target.closest("[data-action='delete']");
-            if (!target) return;
-            var row = cell.getRow();
-            var data = row.getData();
-            if (!window.confirm("Delete this row?")) return;
-            jsonFetch(config.apiBase + "/" + data.id, {
-              method: "DELETE",
-              headers: { "X-CSRF-Token": config.csrfToken },
-            }).then(function (res) {
-              if (res.ok) {
-                row.delete();
-              } else {
-                showAlert(container, errorMessage(res.body), "danger");
-              }
-            });
-          },
-        },
-      ]),
+      columns: (config.columns || []).concat(actionColumns),
     });
 
     table.on("cellEdited", function (cell) {
