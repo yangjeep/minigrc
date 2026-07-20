@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import datetime
 
+import pytest
+from sqlalchemy.exc import IntegrityError
+
 from app.models import AuditEvent, TrustCenterSection, TrustCenterSettings, User
 from app.security import hash_password
 from app.trust_center import get_or_create_settings, is_stale, publish_section, unpublish_section
@@ -92,6 +95,22 @@ def test_published_section_stale_when_expiry_date_passed():
 def test_published_section_stale_when_review_date_passed():
     section = TrustCenterSection(title="x", status="published", review_date=datetime.date(2026, 1, 1))
     assert is_stale(section, today=datetime.date(2026, 6, 1)) is True
+
+
+def test_db_level_check_constraint_rejects_invalid_visibility(app):
+    with app.state.session_factory() as session:
+        session.add(TrustCenterSection(title="Bad visibility", visibility="not-a-real-value"))
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
+
+
+def test_db_level_check_constraint_rejects_invalid_status(app):
+    with app.state.session_factory() as session:
+        session.add(TrustCenterSection(title="Bad status", status="not-a-real-value"))
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
 
 
 def test_published_section_not_stale_before_dates():
