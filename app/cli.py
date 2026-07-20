@@ -191,6 +191,27 @@ def import_csv_command(importer_name: str, file_path: str, framework_id: str | N
     return 0
 
 
+def import_directory_command(directory: str, importer_name: str) -> int:
+    """Run a single reconcile+claim+process pass over a watched import
+    directory. For continuous watching, run this repeatedly (cron, a
+    process-manager loop) or set GRC_IMPORT_WATCH_DIR/
+    GRC_IMPORT_WATCH_IMPORTER so app/worker.py polls it automatically."""
+    from pathlib import Path
+
+    from app.import_directory import run_directory_once
+
+    settings = get_settings()
+    engine = build_engine(settings.resolved_engine_target)
+    init_db(engine)
+    session_factory = make_session_factory(engine)
+
+    processed = run_directory_once(
+        session_factory, root=Path(directory), importer_name=importer_name, actor="cli"
+    )
+    print("Processed one file." if processed else "Nothing to process.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -224,6 +245,14 @@ def main(argv: list[str] | None = None) -> int:
         "--framework-id", default=None, help="Target framework id (required for framework_requirements_csv)"
     )
 
+    import_dir_parser = subparsers.add_parser(
+        "import-directory", help="Run one reconcile+claim+process pass over a watched import directory"
+    )
+    import_dir_parser.add_argument("directory", help="Path to the watched directory root")
+    import_dir_parser.add_argument(
+        "--importer", required=True, help="Importer name to apply to claimed files"
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "migrate":
@@ -236,6 +265,8 @@ def main(argv: list[str] | None = None) -> int:
         return aws_run_checks()
     if args.command == "import-csv":
         return import_csv_command(args.importer, args.file, args.framework_id)
+    if args.command == "import-directory":
+        return import_directory_command(args.directory, args.importer)
 
     parser.print_help()
     return 1
