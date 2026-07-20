@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +13,10 @@ class Settings(BaseSettings):
 
     data_dir: str = "./data"
     database_path: str | None = None
+    # Standard unprefixed DATABASE_URL (not GRC_DATABASE_URL) — matches the
+    # convention most Postgres-hosting platforms use. When set, this takes
+    # priority over database_path/data_dir (see resolved_database_path).
+    database_url: str = Field(default="", validation_alias="DATABASE_URL")
     log_level: str = "INFO"
     app_env: str = "development"
 
@@ -45,6 +50,11 @@ class Settings(BaseSettings):
     @property
     def resolved_database_path(self) -> str:
         return self.database_path or f"{self.data_dir.rstrip('/')}/grc.db"
+
+    @property
+    def resolved_engine_target(self) -> str:
+        """What to pass to app.db.build_engine — DATABASE_URL if set, else the SQLite path."""
+        return self.database_url or self.resolved_database_path
 
     @property
     def max_upload_bytes(self) -> int:

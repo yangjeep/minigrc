@@ -32,15 +32,17 @@ MIN_PASSWORD_LENGTH = 8
 
 def migrate() -> int:
     settings = get_settings()
-    engine = build_engine(settings.resolved_database_path)
+    engine = build_engine(settings.resolved_engine_target)
     init_db(engine)
-    print(f"Database schema at '{settings.resolved_database_path}' is up to date.")
+    # render_as_string(hide_password=True) — never echo a credential from
+    # DATABASE_URL to stdout/logs.
+    print(f"Database schema at '{engine.url.render_as_string(hide_password=True)}' is up to date.")
     return 0
 
 
 def create_user(email: str) -> int:
     settings = get_settings()
-    engine = build_engine(settings.resolved_database_path)
+    engine = build_engine(settings.resolved_engine_target)
     init_db(engine)
     session_factory = make_session_factory(engine)
 
@@ -73,7 +75,7 @@ def create_user(email: str) -> int:
 def promote_admin(email: str) -> int:
     """Grant the admin role to an existing local user. Accepts no password."""
     settings = get_settings()
-    engine = build_engine(settings.resolved_database_path)
+    engine = build_engine(settings.resolved_engine_target)
     init_db(engine)
     session_factory = make_session_factory(engine)
 
@@ -107,7 +109,7 @@ def aws_run_checks() -> int:
     connection. Suitable for an external cron later — this command itself
     adds no scheduling infrastructure."""
     settings = get_settings()
-    engine = build_engine(settings.resolved_database_path)
+    engine = build_engine(settings.resolved_engine_target)
     init_db(engine)
     session_factory = make_session_factory(engine)
 

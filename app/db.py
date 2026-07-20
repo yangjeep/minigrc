@@ -36,17 +36,30 @@ def _set_sqlite_pragmas(dbapi_connection, connection_record) -> None:
     cursor.close()
 
 
-def build_engine(database_path: str) -> Engine:
-    if database_path != ":memory:":
-        directory = os.path.dirname(database_path)
-        if directory:
-            os.makedirs(directory, exist_ok=True)
+def build_engine(database_path_or_url: str) -> Engine:
+    """Build the SQLAlchemy engine.
 
-    engine = create_engine(
-        f"sqlite:///{database_path}",
-        connect_args={"check_same_thread": False},
-    )
-    event.listen(engine, "connect", _set_sqlite_pragmas)
+    Accepts either a bare filesystem path (the SQLite default) or a full
+    SQLAlchemy URL (e.g. `postgresql+psycopg://...`) — a value containing
+    `://` is treated as a URL as-is; anything else is assumed to be a
+    SQLite file path. SQLite-only PRAGMAs are only attached for the
+    sqlite dialect.
+    """
+    if "://" in database_path_or_url:
+        url = database_path_or_url
+    else:
+        database_path = database_path_or_url
+        if database_path != ":memory:":
+            directory = os.path.dirname(database_path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+        url = f"sqlite:///{database_path}"
+
+    is_sqlite = url.startswith("sqlite:")
+    connect_args = {"check_same_thread": False} if is_sqlite else {}
+    engine = create_engine(url, connect_args=connect_args)
+    if is_sqlite:
+        event.listen(engine, "connect", _set_sqlite_pragmas)
     return engine
 
 
