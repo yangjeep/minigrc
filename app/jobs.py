@@ -79,33 +79,48 @@ def enqueue_job(
     return job
 
 
-def claim_job(session: Session, *, worker_id: str) -> Job | None:
-    now = datetime.datetime.now(datetime.UTC)
-    stale_before = now - datetime.timedelta(seconds=STALE_RUNNING_THRESHOLD_SECONDS)
-    candidate_id = session.scalar(
-        select(Job.id)
-        .where(
-            ((Job.status == "pending") & (Job.available_at <= now))
-            | ((Job.status == "running") & (Job.claimed_at.is_not(None)) & (Job.claimed_at <= stale_before))
-        )
-        .order_by(Job.created_at)
-        .limit(1)
+def _candidate_predicate(now: datetime.datetime, stale_before: datetime.datetime):
+    return ((Job.status == "pending") & (Job.available_at <= now)) | (
+        (Job.status == "running") & (Job.claimed_at.is_not(None)) & (Job.claimed_at <= stale_before)
     )
-    if candidate_id is None:
-        return None
 
+
+def _try_claim(
+    session: Session,
+    job_id: str,
+    *,
+    worker_id: str,
+    now: datetime.datetime,
+    stale_before: datetime.datetime,
+) -> Job | None:
+    """Guarded UPDATE that repeats the full candidate predicate (not just
+    `status`), so a row another worker already reclaimed a moment ago
+    (fresh `claimed_at`) no longer matches — closing the TOCTOU window
+    between the candidate SELECT and this UPDATE. See
+    tests/test_jobs.py::test_try_claim_rejects_row_already_freshly_reclaimed_by_another_worker.
+    """
     result = session.execute(
         update(Job)
-        .where(
-            Job.id == candidate_id,
-            (Job.status == "pending") | (Job.status == "running"),
-        )
+        .where(Job.id == job_id, _candidate_predicate(now, stale_before))
         .values(status="running", claimed_by=worker_id, claimed_at=now)
+        .execution_options(synchronize_session=False)
     )
     if result.rowcount != 1:
         return None
     session.flush()
-    return session.get(Job, candidate_id)
+    session.expire_all()
+    return session.get(Job, job_id)
+
+
+def claim_job(session: Session, *, worker_id: str) -> Job | None:
+    now = datetime.datetime.now(datetime.UTC)
+    stale_before = now - datetime.timedelta(seconds=STALE_RUNNING_THRESHOLD_SECONDS)
+    candidate_id = session.scalar(
+        select(Job.id).where(_candidate_predicate(now, stale_before)).order_by(Job.created_at).limit(1)
+    )
+    if candidate_id is None:
+        return None
+    return _try_claim(session, candidate_id, worker_id=worker_id, now=now, stale_before=stale_before)
 
 
 def claim_specific_job(session: Session, job_id: str, *, worker_id: str) -> Job | None:
