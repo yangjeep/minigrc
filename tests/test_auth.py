@@ -76,6 +76,19 @@ def test_logout_invalidates_session(logged_in_client):
     assert protected.headers["location"] == "/login"
 
 
+def test_authenticated_pages_are_not_cached(logged_in_client):
+    """Regression: the back button after logout must not replay a cached
+    authenticated page from the browser's HTTP cache — see UAT finding,
+    2026-07-20 admin/OAuth/IAM/connections consolidation worklog."""
+    response = logged_in_client.get("/")
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_login_page_is_not_cached(client):
+    response = client.get("/login")
+    assert response.headers["cache-control"] == "no-store"
+
+
 def test_expired_session_is_rejected(app, client, test_user):
     raw_token = "expired-raw-session-token"
     session_factory = app.state.session_factory

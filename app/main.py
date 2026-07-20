@@ -123,6 +123,11 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
         existing = request.cookies.get(CSRF_COOKIE_NAME)
         request.state.csrf_token = existing or new_csrf_token()
         response = await call_next(request)
+        if not request.url.path.startswith("/static/"):
+            # Prevent the browser (or an intermediate cache) from replaying a
+            # previously fetched authenticated page — e.g. via the back
+            # button after logout — without a fresh request/auth check.
+            response.headers["Cache-Control"] = "no-store"
         if not existing:
             response.set_cookie(
                 CSRF_COOKIE_NAME,
