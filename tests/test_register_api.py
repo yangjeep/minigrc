@@ -185,6 +185,17 @@ def test_bulk_update_applies_when_all_valid(logged_in_client):
     assert listing[b["id"]]["status"] == "in_progress"
 
 
+def test_patch_rejects_unknown_field_name(logged_in_client):
+    row = _create_control(logged_in_client, name="Unknown field target")
+    response = logged_in_client.patch(
+        f"{REGISTER_URL}/{row['id']}",
+        json={"fields": {"id": "attacker-controlled-id"}, "expected_updated_at": row["updated_at"]},
+        headers=_csrf_headers(logged_in_client),
+    )
+    assert response.status_code == 422
+    assert "id" in response.json()["detail"]
+
+
 def test_any_logged_in_user_can_create_and_edit(logged_in_client):
     # Controls CRUD is ordinary GRC data — no admin gating, per decisions #8/#12.
     row = _create_control(logged_in_client, name="Non-admin create")

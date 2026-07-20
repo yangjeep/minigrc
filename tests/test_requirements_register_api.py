@@ -82,7 +82,7 @@ def test_patch_updates_catalogue_field(logged_in_client, app):
     assert response.json()["title"] == "Renamed requirement"
 
 
-def test_patch_ignores_read_only_assessment_field(logged_in_client, app):
+def test_patch_rejects_read_only_assessment_field(logged_in_client, app):
     framework_id, requirement_id = _make_framework_with_requirement(app)
     row = next(
         r
@@ -94,12 +94,12 @@ def test_patch_ignores_read_only_assessment_field(logged_in_client, app):
         json={"fields": {"applicable": "no"}, "expected_updated_at": row["updated_at"]},
         headers=_csrf_headers(logged_in_client),
     )
-    assert response.status_code == 200
+    assert response.status_code == 422
     with app.state.session_factory() as session:
         assessment = session.get(
             RequirementAssessment, session.get(FrameworkRequirement, requirement_id).assessment.id
         )
-        assert assessment.applicable == "yes"  # unchanged — read-only field silently ignored
+        assert assessment.applicable == "yes"  # unchanged — read-only field explicitly rejected
 
 
 def test_create_route_not_mounted(logged_in_client):
