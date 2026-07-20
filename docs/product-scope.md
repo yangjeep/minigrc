@@ -57,7 +57,7 @@ without duplicating tools that already do their job well.
 | Vendor roster snapshots | Implemented — append-only CSV import per vendor, delta view, Person matching, admin-only linking | Internal (this app), sourced from the vendor's own export |
 | Actions (corrective actions / exceptions) | Placeholder page only | External — Asana |
 | Connectors (GitHub, Azure, Asana) | Placeholder page only | External systems; this app will store results |
-| Trust Center | Admin implemented (settings, sections, publish/unpublish, preview) — public unauthenticated route not yet built | Internal — curated subset of this app's data |
+| Trust Center | Implemented — admin (settings, sections, publish/unpublish, preview) and public unauthenticated route (published-only content, gated policy downloads) | Internal — curated subset of this app's data |
 | Vulnerabilities | Out of scope, intentionally | External — Aikido |
 
 ## Why controls and requirements are separate
