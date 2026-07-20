@@ -35,4 +35,13 @@
   <label>Treatment plan <textarea name="treatment_plan"></textarea></label>
   <button type="submit">Add risk</button>
 </form>
+
+<h2>Import risks</h2>
+<form method="post" action="/risks/import" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Import from CSV (columns: title, description, category, likelihood, impact, owner, status, treatment_plan)
+    <input type="file" name="file" accept=".csv" required>
+  </label>
+  <button type="submit">Import CSV</button>
+</form>
 {% endblock %}

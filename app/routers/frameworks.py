@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from sqlalchemy import select
@@ -8,9 +9,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
-from app.csv_import import CsvTooLargeError, import_requirements_csv, read_csv_upload
+from app.csv_import import CsvTooLargeError, read_csv_upload
 from app.deps import get_db, require_login, verify_csrf
 from app.flash import redirect_with_flash
+from app.imports import enqueue_and_run_import
 from app.models import (
     APPLICABILITY_VALUES,
     IMPLEMENTATION_STATES,
@@ -253,24 +255,24 @@ def import_requirements(
     except CsvTooLargeError as exc:
         return redirect_with_flash(f"/frameworks/{framework_id}", str(exc), kind="error")
 
-    created, errors = import_requirements_csv(db, framework, raw_bytes)
+    import_job = enqueue_and_run_import(
+        db,
+        importer_name="framework_requirements_csv",
+        raw_bytes=raw_bytes,
+        filename=file.filename or "upload.csv",
+        target={"framework_id": framework_id},
+        actor=request.state.user.email,
+        source="web",
+    )
 
-    if errors:
-        db.rollback()
+    if import_job.status != "completed":
+        errors = json.loads(import_job.validation_errors_json or "[]")
         preview = "; ".join(errors[:5])
-        if len(errors) > 5:
-            preview += f"; and {len(errors) - 5} more error(s)"
         return redirect_with_flash(f"/frameworks/{framework_id}", f"Import failed: {preview}", kind="error")
 
-    record_audit_event(
-        db,
-        entity_type="framework",
-        entity_id=framework.id,
-        action="import_csv",
-        detail=f"Imported {created} requirement(s) from CSV into '{framework.name}'",
-        actor=request.state.user.email,
+    return redirect_with_flash(
+        f"/frameworks/{framework_id}", f"Imported {import_job.records_created} requirement(s)."
     )
-    return redirect_with_flash(f"/frameworks/{framework_id}", f"Imported {created} requirement(s).")
 
 
 @router.get("/{framework_id}/requirements/{requirement_id}")

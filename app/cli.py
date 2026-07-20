@@ -24,6 +24,7 @@ from app.aws_connector import (
 from app.config import get_settings
 from app.crypto import DecryptionError, EncryptionNotConfiguredError, decrypt
 from app.db import build_engine, init_db, make_session_factory, session_scope
+from app.imports import run_import
 from app.models import AwsConnection, User
 from app.security import hash_password, normalize_email
 
@@ -157,6 +158,39 @@ def aws_run_checks() -> int:
     return 0
 
 
+def import_csv_command(importer_name: str, file_path: str, framework_id: str | None) -> int:
+    settings = get_settings()
+    engine = build_engine(settings.resolved_engine_target)
+    init_db(engine)
+    session_factory = make_session_factory(engine)
+
+    try:
+        with open(file_path, "rb") as f:
+            raw_bytes = f.read()
+    except OSError as exc:
+        print(f"Could not read '{file_path}': {exc}")
+        return 1
+
+    target = {"framework_id": framework_id} if framework_id else {}
+    with session_scope(session_factory) as session:
+        job = run_import(
+            session,
+            importer_name=importer_name,
+            raw_bytes=raw_bytes,
+            filename=file_path.rsplit("/", 1)[-1],
+            target=target,
+            actor="cli",
+            source="cli",
+        )
+        if job.status != "completed":
+            errors = job.validation_errors_json or "[]"
+            print(f"Import rejected: {errors}")
+            return 1
+        print(f"Imported {job.records_created} record(s) via '{importer_name}'.")
+
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -177,6 +211,19 @@ def main(argv: list[str] | None = None) -> int:
         "aws-run-checks", help="Run AWS CloudTrail/IAM evidence checks against the configured connection"
     )
 
+    import_csv_parser = subparsers.add_parser(
+        "import-csv", help="Import a CSV file through the native import subsystem"
+    )
+    import_csv_parser.add_argument(
+        "--importer",
+        required=True,
+        help="Importer name, e.g. risk_register_csv or framework_requirements_csv",
+    )
+    import_csv_parser.add_argument("--file", required=True, help="Path to the CSV file")
+    import_csv_parser.add_argument(
+        "--framework-id", default=None, help="Target framework id (required for framework_requirements_csv)"
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "migrate":
@@ -187,6 +234,8 @@ def main(argv: list[str] | None = None) -> int:
         return promote_admin(args.email)
     if args.command == "aws-run-checks":
         return aws_run_checks()
+    if args.command == "import-csv":
+        return import_csv_command(args.importer, args.file, args.framework_id)
 
     parser.print_help()
     return 1
