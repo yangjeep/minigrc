@@ -19,6 +19,7 @@ dependencies = [
     "cryptography>=43.0",
     "boto3>=1.35",
     "psycopg[binary]>=3.1",
+    "pymysql>=1.1",
 ]
 
 [project.optional-dependencies]

@@ -743,6 +743,54 @@ class Secret(Base):
         return f"Secret(id={self.id!r}, name={self.name!r}, kind={self.kind!r})"
 
 
+CONNECTION_DB_TYPES = ("postgres", "mysql", "sqlite", "generic")
+CONNECTION_TLS_MODES = ("disable", "prefer", "require", "verify_full")
+CONNECTION_TEST_STATUSES = ("untested", "success", "failure")
+
+
+class ExternalConnection(Base):
+    """A read-only connection to a customer/organization database, for
+    future evidence/inventory collection — separate from this app's own
+    database (see app/db.py). Credentials are never stored directly here;
+    `secret_id` references a Secret (app/secrets.py) holding either an
+    encrypted password (postgres/mysql) or an encrypted full URL
+    (generic). sqlite connections need no secret (local file access).
+    `__repr__` deliberately excludes every credential-adjacent field.
+    """
+
+    __tablename__ = "external_connections"
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_external_connection_name"),
+        CheckConstraint(f"db_type IN {CONNECTION_DB_TYPES}", name="ck_connection_db_type"),
+        CheckConstraint(f"tls_mode IN {CONNECTION_TLS_MODES}", name="ck_connection_tls_mode"),
+        CheckConstraint(f"last_test_status IN {CONNECTION_TEST_STATUSES}", name="ck_connection_test_status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    db_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    port: Mapped[int | None] = mapped_column(nullable=True)
+    database_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sqlite_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    secret_id: Mapped[str | None] = mapped_column(ForeignKey("secrets.id"), nullable=True)
+    tls_mode: Mapped[str] = mapped_column(String(16), default="prefer")
+    enabled: Mapped[bool] = mapped_column(default=True)
+    owner: Mapped[str] = mapped_column(String(255), default="")
+    last_tested_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    last_test_status: Mapped[str] = mapped_column(String(16), default="untested")
+    last_test_message: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    secret: Mapped[Secret | None] = relationship()
+
+    def __repr__(self) -> str:
+        return f"ExternalConnection(id={self.id!r}, name={self.name!r}, db_type={self.db_type!r})"
+
+
 class AuditEvent(Base):
     """Append-only record of who changed what, for auditor-facing history.
 
