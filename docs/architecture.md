@@ -56,10 +56,12 @@ SQLite file (GRC_DATA_DIR/grc.db)   Policy files (GRC_DATA_DIR/policies/<id>/<ve
 - **`app/routers/` mirrors the nav, one module per area.** Reading the nav
   in `app/main.py::NAV_ITEMS` tells you which router to open.
 - **`placeholders.py` uses a catch-all `/{slug}` route** for the
-  not-yet-built nav areas (Evidence, Actions, Connectors, Trust Center)
-  instead of one router module per area. Because it's a catch-all, it is
-  registered **last** in `create_app()` — anything registered after it
-  would be silently shadowed.
+  not-yet-built nav areas (Actions, Connectors) instead of one router
+  module per area. Because it's a catch-all, it is registered **last**
+  in `create_app()` — anything registered after it would be silently
+  shadowed. Evidence and Trust Center were placeholders originally but
+  are now real router modules (`app/routers/evidence.py`,
+  `app/routers/trust_center.py` + `trust_center_public.py`).
 - **No repository/service layer.** Routers call SQLAlchemy directly. With
   one process and one database, an extra layer here would only wrap the
   ORM without adding a real seam — see the "no generic abstractions"
