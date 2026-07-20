@@ -110,46 +110,18 @@ def create_framework(
 
 
 @router.get("/{framework_id}")
-def view_framework(
-    framework_id: str,
-    request: Request,
-    q: str = "",
-    applicable: str = "",
-    state: str = "",
-    db: Session = Depends(get_db),
-):
+def view_framework(framework_id: str, request: Request, db: Session = Depends(get_db)):
     framework = db.get(Framework, framework_id)
     if framework is None:
         raise HTTPException(status_code=404, detail="Framework not found")
 
     progress = compute_progress(framework)
 
-    requirements = framework.requirements
-    if q:
-        needle = q.strip().lower()
-        requirements = [
-            r for r in requirements if needle in r.reference_code.lower() or needle in r.title.lower()
-        ]
-    if applicable in APPLICABILITY_VALUES:
-        requirements = [r for r in requirements if r.assessment and r.assessment.applicable == applicable]
-    if state in IMPLEMENTATION_STATES:
-        requirements = [
-            r for r in requirements if r.assessment and r.assessment.implementation_state == state
-        ]
-
     templates = request.app.state.templates
     return templates.TemplateResponse(
         request,
         "frameworks/detail.html",
-        {
-            "framework": framework,
-            "progress": progress,
-            "requirements": requirements,
-            "q": q,
-            "selected_applicable": applicable,
-            "selected_state": state,
-            "implementation_states": IMPLEMENTATION_STATES,
-        },
+        {"framework": framework, "progress": progress},
     )
 
 

@@ -5,6 +5,13 @@ from sqlalchemy import select
 from app.models import AuditEvent, Framework, FrameworkRequirement, RequirementNote
 from tests.conftest import extract_csrf_token
 
+REGISTER_URL = "/api/registers/framework-requirements"
+
+
+def _reference_codes(client, framework_id: str) -> list[str]:
+    response = client.get(REGISTER_URL, params={"framework_id": framework_id})
+    return [row["reference_code"] for row in response.json()]
+
 
 def _seeded_framework_id(app) -> str:
     with app.state.session_factory() as session:
@@ -44,8 +51,7 @@ def test_requirement_creation(logged_in_client, app):
     )
     assert response.status_code == 303
 
-    detail = logged_in_client.get(f"/frameworks/{framework_id}")
-    assert b"Z.9" in detail.content
+    assert "Z.9" in _reference_codes(logged_in_client, framework_id)
 
 
 def test_duplicate_reference_code_rejected(logged_in_client, app):
@@ -82,9 +88,9 @@ def test_csv_import_success(logged_in_client, app):
     assert response.status_code == 303
     assert "Imported+2" in response.headers["location"]
 
-    detail = logged_in_client.get(f"/frameworks/{framework_id}")
-    assert b"X.1" in detail.content
-    assert b"X.2" in detail.content
+    codes = _reference_codes(logged_in_client, framework_id)
+    assert "X.1" in codes
+    assert "X.2" in codes
 
 
 def test_oversize_csv_rejected_without_touching_database(logged_in_client, app):
@@ -125,8 +131,7 @@ def test_oversize_csv_rejected_without_touching_database(logged_in_client, app):
         }
     assert after_ids == before_ids
     assert before_count is not None  # sanity: the seeded framework did have requirements
-    detail = logged_in_client.get(f"/frameworks/{framework_id}")
-    assert b"OV.1" not in detail.content
+    assert "OV.1" not in _reference_codes(logged_in_client, framework_id)
 
 
 def test_csv_within_size_limit_still_imports(logged_in_client, app):
@@ -146,8 +151,7 @@ def test_csv_within_size_limit_still_imports(logged_in_client, app):
     assert response.status_code == 303
     assert "Imported+1" in response.headers["location"]
 
-    detail = logged_in_client.get(f"/frameworks/{framework_id}")
-    assert b"BND.1" in detail.content
+    assert "BND.1" in _reference_codes(logged_in_client, framework_id)
 
 
 def test_malformed_csv_rolls_back_entirely(logged_in_client, app):
@@ -165,8 +169,7 @@ def test_malformed_csv_rolls_back_entirely(logged_in_client, app):
     assert response.status_code == 303
     assert "flash_kind=error" in response.headers["location"]
 
-    detail = logged_in_client.get(f"/frameworks/{framework_id}")
-    assert b"Y.1" not in detail.content
+    assert "Y.1" not in _reference_codes(logged_in_client, framework_id)
 
 
 def test_csv_import_missing_columns_rejected(logged_in_client, app):
@@ -200,8 +203,7 @@ def test_duplicate_reference_code_within_csv_rejected(logged_in_client, app):
     assert response.status_code == 303
     assert "flash_kind=error" in response.headers["location"]
 
-    detail = logged_in_client.get(f"/frameworks/{framework_id}")
-    assert b"W.1" not in detail.content
+    assert "W.1" not in _reference_codes(logged_in_client, framework_id)
 
 
 def test_assessment_state_update(logged_in_client, app):
