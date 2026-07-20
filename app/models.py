@@ -764,6 +764,37 @@ class Secret(Base):
         return f"Secret(id={self.id!r}, name={self.name!r}, kind={self.kind!r})"
 
 
+class GoogleOidcSettings(Base):
+    """Admin-configured Google OAuth login settings — the single most
+    recently updated row is the active configuration (same "plain config
+    updated in place" shape as `AwsConnection`, not an OAuth grant
+    history like `GoogleDriveConnection`). The client secret is never
+    stored directly here: `secret_id` references a `Secret` (encrypted via
+    `app/crypto.py`), so the plaintext is resolved server-side only and
+    never redisplayed after save. When no row exists (or the row is
+    disabled), `app/google_oidc_config.py` falls back to the legacy
+    `GRC_GOOGLE_OIDC_*` environment variables, preserving existing
+    env-var-only deployments.
+    """
+
+    __tablename__ = "google_oidc_settings"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    enabled: Mapped[bool] = mapped_column(default=False)
+    client_id: Mapped[str] = mapped_column(String(255), default="")
+    secret_id: Mapped[str | None] = mapped_column(ForeignKey("secrets.id"), nullable=True)
+    allowed_domains: Mapped[str] = mapped_column(Text, default="")
+    auto_provision_enabled: Mapped[bool] = mapped_column(default=False)
+    updated_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    secret: Mapped[Secret | None] = relationship()
+
+    def __repr__(self) -> str:
+        return f"GoogleOidcSettings(id={self.id!r}, enabled={self.enabled!r})"
+
+
 CONNECTION_DB_TYPES = ("postgres", "mysql", "sqlite", "generic")
 CONNECTION_TLS_MODES = ("disable", "prefer", "require", "verify_full")
 CONNECTION_TEST_STATUSES = ("untested", "success", "failure")
