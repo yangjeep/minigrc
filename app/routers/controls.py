@@ -8,9 +8,36 @@ from sqlalchemy.orm import Session
 from app.audit import record_audit_event
 from app.deps import get_db, require_login, verify_csrf
 from app.flash import redirect_with_flash
-from app.models import ControlRequirementMapping, FrameworkRequirement, InternalControl
+from app.models import (
+    CONTROL_STATUSES,
+    REVIEW_FREQUENCIES,
+    ControlRequirementMapping,
+    FrameworkRequirement,
+    InternalControl,
+)
+from app.registers.config import FieldSpec, RegisterConfig
+from app.registers.router import build_register_router
 
 router = APIRouter(prefix="/controls", tags=["controls"], dependencies=[Depends(require_login)])
+
+CONTROLS_REGISTER_CONFIG = RegisterConfig(
+    name="controls",
+    model=InternalControl,
+    entity_type="control",
+    order_by=InternalControl.name,
+    fields=(
+        FieldSpec(name="name", type="text", required=True, max_length=255),
+        FieldSpec(name="owner", type="text", max_length=255),
+        FieldSpec(name="status", type="enum", choices=CONTROL_STATUSES),
+        FieldSpec(name="review_frequency", type="enum", choices=REVIEW_FREQUENCIES),
+        FieldSpec(name="description", type="text"),
+        FieldSpec(
+            name="mapped_requirements", type="number", read_only=True, compute=lambda c: len(c.mappings)
+        ),
+    ),
+)
+
+controls_register_router = build_register_router(CONTROLS_REGISTER_CONFIG)
 
 
 @router.get("")

@@ -74,3 +74,11 @@ def verify_csrf(request: Request, csrf_token: str = Form(...)) -> None:
     cookie_value = request.cookies.get(CSRF_COOKIE_NAME)
     if not csrf_tokens_match(cookie_value, csrf_token):
         raise HTTPException(status_code=400, detail="CSRF validation failed")
+
+
+def verify_csrf_header(request: Request) -> None:
+    """CSRF check for JSON API endpoints (register grid), header instead of form field."""
+    cookie_value = request.cookies.get(CSRF_COOKIE_NAME)
+    header_value = request.headers.get("X-CSRF-Token")
+    if not csrf_tokens_match(cookie_value, header_value):
+        raise HTTPException(status_code=400, detail="CSRF validation failed")
