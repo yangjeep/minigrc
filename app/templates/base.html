@@ -36,6 +36,11 @@
               <a class="nav-link{% if request.url.path == href %} active{% endif %}" href="{{ href }}" {% if request.url.path == href %}aria-current="page"{% endif %}>{{ label }}</a>
             </li>
             {% endfor %}
+            {% if request.state.user is defined and request.state.user and request.state.user.role == "admin" %}
+            <li class="nav-item">
+              <a class="nav-link{% if request.url.path.startswith('/admin') %} active{% endif %}" href="/admin" {% if request.url.path.startswith('/admin') %}aria-current="page"{% endif %}>Admin</a>
+            </li>
+            {% endif %}
           </ul>
         </nav>
         {% if request.state.user is defined and request.state.user %}

@@ -100,3 +100,30 @@ def test_require_admin_rejects_regular_user():
 def test_require_admin_allows_admin_user():
     admin = User(email="admin@example.com", password_hash="x", role="admin")
     assert require_admin(user=admin) is admin
+
+
+def test_admin_shell_requires_admin_role(logged_in_client):
+    response = logged_in_client.get("/admin")
+    assert response.status_code == 403
+
+
+def test_admin_shell_redirects_anonymous_to_login(client):
+    response = client.get("/admin", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
+def test_admin_shell_loads_for_admin(admin_client):
+    response = admin_client.get("/admin")
+    assert response.status_code == 200
+    assert "Admin" in response.text
+
+
+def test_admin_nav_link_hidden_from_regular_users(logged_in_client):
+    response = logged_in_client.get("/")
+    assert 'href="/admin"' not in response.text
+
+
+def test_admin_nav_link_shown_to_admins(admin_client):
+    response = admin_client.get("/")
+    assert 'href="/admin"' in response.text
