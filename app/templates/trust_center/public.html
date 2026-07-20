@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ settings.title }}</title>
+  <meta name="description" content="{{ settings.title }} — security and compliance information.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{{ settings.title }}">
+  <meta property="og:description" content="{{ settings.title }} — security and compliance information.">
+  <link rel="stylesheet" href="/static/vendor/bootstrap-5.3.3/bootstrap.min.css">
+  <link rel="stylesheet" href="/static/theme.css">
+</head>
+<body>
+  <header class="border-bottom bg-dark text-white py-4 mb-4">
+    <div class="container">
+      <h1 class="mb-0">{{ settings.title }}</h1>
+    </div>
+  </header>
+
+  <main class="container pb-5" style="max-width: 840px;">
+    {% if intro_html %}
+    <div class="mb-5">{{ intro_html | safe }}</div>
+    {% endif %}
+
+    {% if sections %}
+    {% for section in sections %}
+    <section id="section-{{ section.id }}" class="mb-5 pb-4 border-bottom">
+      <h2>{{ section.title }}</h2>
+      <div>{{ section.html | safe }}</div>
+      {% if section.review_date or section.expiry_date %}
+      <p class="text-secondary small">
+        {% if section.review_date %}Last reviewed: {{ section.review_date }}{% endif %}
+        {% if section.review_date and section.expiry_date %} &middot; {% endif %}
+        {% if section.expiry_date %}Valid until: {{ section.expiry_date }}{% endif %}
+      </p>
+      {% endif %}
+      {% if section.linked_policy %}
+      <p><a class="btn btn-outline-primary btn-sm" href="/trust-center/policies/{{ section.linked_policy.id }}/download">
+        Download {{ section.linked_policy.title }}
+      </a></p>
+      {% endif %}
+    </section>
+    {% endfor %}
+    {% else %}
+    <p class="text-secondary">No published information is available yet.</p>
+    {% endif %}
+  </main>
+
+  {% if settings.contact_email or settings.support_url %}
+  <footer class="border-top py-4">
+    <div class="container text-secondary small">
+      {% if settings.contact_email %}<p class="mb-1">Contact: <a href="mailto:{{ settings.contact_email }}">{{ settings.contact_email }}</a></p>{% endif %}
+      {% if settings.support_url %}<p class="mb-0"><a href="{{ settings.support_url }}">Support</a></p>{% endif %}
+    </div>
+  </footer>
+  {% endif %}
+</body>
+</html>
