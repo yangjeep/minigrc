@@ -33,7 +33,10 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_PASSWORD: postgres
+          # trust auth: this container is job-scoped and torn down at job
+          # end, never reachable outside the runner — no real credential
+          # to protect. See PR discussion for the GitGuardian disposition.
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: minigrc_test
         ports:
           - 5432:5432
@@ -54,7 +57,7 @@ jobs:
 
       - name: Run Postgres compatibility and migration tests
         env:
-          TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/minigrc_test
+          TEST_DATABASE_URL: postgresql+psycopg://postgres@localhost:5432/minigrc_test
         run: pytest tests/test_postgres_compat.py -v
 
   docker:
