@@ -143,10 +143,18 @@ SQLite file (GRC_DATA_DIR/grc.db)   Policy files (GRC_DATA_DIR/policies/<id>/<ve
   existing user, no password involved — see "Admin authorization" below).
 - Optional Google OIDC login (`app/google_oidc.py`,
   `app/routers/google_oidc.py`) is a second way to establish the same
-  `User`/session — disabled (404) unless `GRC_GOOGLE_OIDC_CLIENT_ID`/
-  `_CLIENT_SECRET`/`GRC_PUBLIC_BASE_URL` are all set. Session issuance
-  itself (`app/routers/auth.py::start_user_session`) is shared between
-  local login and OIDC login.
+  `User`/session — disabled (404) unless a usable configuration exists,
+  either Admin > Authentication > Google OAuth (DB-backed, see
+  `app/google_oidc_config.py`) or the legacy `GRC_GOOGLE_OIDC_*` env
+  vars. Session issuance itself (`app/routers/auth.py::start_user_session`)
+  is shared between local login and OIDC login.
+- `User.status` (`active`/`disabled`/`pending`) gates every login path,
+  rechecked on every request by `require_login` so disabling a user
+  takes effect immediately. `User.google_subject` is Google's stable
+  `sub` claim, the primary match key for OIDC login (survives an email
+  change; a different subject claiming an already-linked email is
+  rejected as a collision). See `docs/deployment/authentication.md` for
+  the first-login policy, break-glass recovery, and secret rotation.
 
 ## Admin authorization
 
