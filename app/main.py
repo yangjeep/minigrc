@@ -119,6 +119,7 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
     app.include_router(google_oidc.router)
     app.include_router(dashboard.router)
     app.include_router(frameworks.router)
+    app.include_router(frameworks.requirements_register_router)
     app.include_router(controls.router)
     app.include_router(controls.controls_register_router)
     app.include_router(policies.router)

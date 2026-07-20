@@ -29,3 +29,8 @@ class RegisterConfig:
     fields: tuple[FieldSpec, ...]
     order_by: Any
     require_admin_for: frozenset[RegisterAction] = field(default_factory=frozenset)
+    scope_field: str | None = None
+    create_fn: Callable[[Any, dict[str, Any]], Any] | None = None
+    creatable: bool = True
+    deletable: bool = True
+    bulk_enabled: bool = True

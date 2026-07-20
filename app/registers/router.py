@@ -10,8 +10,9 @@ from __future__ import annotations
 import datetime
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
@@ -67,35 +68,56 @@ def build_register_router(config: RegisterConfig) -> APIRouter:
         return data
 
     @router.get("")
-    def list_rows(db: Session = Depends(get_db), user: User = Depends(require_login)) -> list[dict[str, Any]]:
-        rows = db.scalars(select(config.model).order_by(config.order_by)).all()
+    def list_rows(
+        request: Request, db: Session = Depends(get_db), user: User = Depends(require_login)
+    ) -> list[dict[str, Any]]:
+        query = select(config.model).order_by(config.order_by)
+        if config.scope_field is not None:
+            scope_value = request.query_params.get(config.scope_field)
+            if not scope_value:
+                raise HTTPException(status_code=400, detail=f"{config.scope_field} query param is required")
+            query = query.where(getattr(config.model, config.scope_field) == scope_value)
+        rows = db.scalars(query).all()
         return [serialize(row) for row in rows]
 
-    @router.post("", status_code=201)
-    def create_row(
-        payload: dict[str, Any] = Body(...),
-        db: Session = Depends(get_db),
-        user: User = Depends(require_login),
-        _csrf: None = Depends(verify_csrf_header),
-    ) -> dict[str, Any]:
-        _check_permission(config, "create", user)
-        errors = _validate(config, payload, partial=False)
-        if errors:
-            raise HTTPException(status_code=422, detail=errors)
-        row = config.model(
-            **{spec.name: payload.get(spec.name) for spec in config.fields if not spec.read_only}
-        )
-        db.add(row)
-        db.flush()
-        record_audit_event(
-            db,
-            entity_type=config.entity_type,
-            entity_id=row.id,
-            action="create",
-            detail=f"Created {config.entity_type} '{row.id}'",
-            actor=user.email,
-        )
-        return serialize(row)
+    if config.creatable:
+
+        @router.post("", status_code=201)
+        def create_row(
+            payload: dict[str, Any] = Body(...),
+            db: Session = Depends(get_db),
+            user: User = Depends(require_login),
+            _csrf: None = Depends(verify_csrf_header),
+        ) -> dict[str, Any]:
+            _check_permission(config, "create", user)
+            if config.scope_field is not None and not payload.get(config.scope_field):
+                raise HTTPException(status_code=422, detail={config.scope_field: ["required"]})
+            errors = _validate(config, payload, partial=False)
+            if errors:
+                raise HTTPException(status_code=422, detail=errors)
+            if config.create_fn is not None:
+                row = config.create_fn(db, payload)
+            else:
+                row = config.model(
+                    **{spec.name: payload.get(spec.name) for spec in config.fields if not spec.read_only}
+                )
+                db.add(row)
+            try:
+                db.flush()
+            except IntegrityError:
+                db.rollback()
+                raise HTTPException(
+                    status_code=422, detail={"__all__": ["duplicate or constraint violation"]}
+                ) from None
+            record_audit_event(
+                db,
+                entity_type=config.entity_type,
+                entity_id=row.id,
+                action="create",
+                detail=f"Created {config.entity_type} '{row.id}'",
+                actor=user.email,
+            )
+            return serialize(row)
 
     @router.patch("/{row_id}")
     def update_row(
@@ -129,61 +151,65 @@ def build_register_router(config: RegisterConfig) -> APIRouter:
         )
         return serialize(row)
 
-    @router.delete("/{row_id}", status_code=204)
-    def delete_row(
-        row_id: str,
-        db: Session = Depends(get_db),
-        user: User = Depends(require_login),
-        _csrf: None = Depends(verify_csrf_header),
-    ) -> None:
-        _check_permission(config, "delete", user)
-        row = db.get(config.model, row_id)
-        if row is None:
-            raise HTTPException(status_code=404, detail="Row not found")
-        record_audit_event(
-            db,
-            entity_type=config.entity_type,
-            entity_id=row.id,
-            action="delete",
-            detail=f"Deleted {config.entity_type} '{row.id}'",
-            actor=user.email,
-        )
-        db.delete(row)
+    if config.deletable:
 
-    @router.post("/bulk")
-    def bulk_update(
-        payload: dict[str, Any] = Body(...),
-        db: Session = Depends(get_db),
-        user: User = Depends(require_login),
-        _csrf: None = Depends(verify_csrf_header),
-    ) -> list[dict[str, Any]]:
-        _check_permission(config, "edit", user)
-        updates = payload.get("updates", [])
-        planned: list[tuple[Any, dict[str, Any]]] = []
-        for update in updates:
-            row = db.get(config.model, update.get("id"))
+        @router.delete("/{row_id}", status_code=204)
+        def delete_row(
+            row_id: str,
+            db: Session = Depends(get_db),
+            user: User = Depends(require_login),
+            _csrf: None = Depends(verify_csrf_header),
+        ) -> None:
+            _check_permission(config, "delete", user)
+            row = db.get(config.model, row_id)
             if row is None:
-                raise HTTPException(status_code=404, detail=f"Row {update.get('id')} not found")
-            if update.get("expected_updated_at") != _iso(row.updated_at):
-                raise HTTPException(status_code=409, detail={"id": row.id, "current": serialize(row)})
-            fields = update.get("fields", {})
-            errors = _validate(config, fields, partial=True)
-            if errors:
-                raise HTTPException(status_code=422, detail={"id": row.id, "errors": errors})
-            planned.append((row, fields))
+                raise HTTPException(status_code=404, detail="Row not found")
+            record_audit_event(
+                db,
+                entity_type=config.entity_type,
+                entity_id=row.id,
+                action="delete",
+                detail=f"Deleted {config.entity_type} '{row.id}'",
+                actor=user.email,
+            )
+            db.delete(row)
 
-        for row, fields in planned:
-            for key, value in fields.items():
-                setattr(row, key, value)
-        db.flush()
-        record_audit_event(
-            db,
-            entity_type=config.entity_type,
-            entity_id="bulk",
-            action="bulk_update",
-            detail=f"Bulk updated {len(planned)} {config.entity_type} rows",
-            actor=user.email,
-        )
-        return [serialize(row) for row, _ in planned]
+    if config.bulk_enabled:
+
+        @router.post("/bulk")
+        def bulk_update(
+            payload: dict[str, Any] = Body(...),
+            db: Session = Depends(get_db),
+            user: User = Depends(require_login),
+            _csrf: None = Depends(verify_csrf_header),
+        ) -> list[dict[str, Any]]:
+            _check_permission(config, "edit", user)
+            updates = payload.get("updates", [])
+            planned: list[tuple[Any, dict[str, Any]]] = []
+            for update in updates:
+                row = db.get(config.model, update.get("id"))
+                if row is None:
+                    raise HTTPException(status_code=404, detail=f"Row {update.get('id')} not found")
+                if update.get("expected_updated_at") != _iso(row.updated_at):
+                    raise HTTPException(status_code=409, detail={"id": row.id, "current": serialize(row)})
+                fields = update.get("fields", {})
+                errors = _validate(config, fields, partial=True)
+                if errors:
+                    raise HTTPException(status_code=422, detail={"id": row.id, "errors": errors})
+                planned.append((row, fields))
+
+            for row, fields in planned:
+                for key, value in fields.items():
+                    setattr(row, key, value)
+            db.flush()
+            record_audit_event(
+                db,
+                entity_type=config.entity_type,
+                entity_id="bulk",
+                action="bulk_update",
+                detail=f"Bulk updated {len(planned)} {config.entity_type} rows",
+                actor=user.email,
+            )
+            return [serialize(row) for row, _ in planned]
 
     return router
