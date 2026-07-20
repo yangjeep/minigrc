@@ -36,6 +36,12 @@ def _iso(dt: datetime.datetime) -> str:
 
 def _validate(config: RegisterConfig, payload: dict[str, Any], *, partial: bool) -> dict[str, list[str]]:
     errors: dict[str, list[str]] = {}
+    editable_names = {spec.name for spec in config.fields if not spec.read_only}
+    if config.scope_field is not None:
+        editable_names = editable_names | {config.scope_field}
+    for key in payload:
+        if key not in editable_names:
+            errors.setdefault(key, []).append("unknown or read-only field")
     for spec in config.fields:
         if spec.read_only:
             continue
