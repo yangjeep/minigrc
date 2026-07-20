@@ -1,0 +1,30 @@
+{% extends "admin/base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}Users · Admin · minigrc{% endblock %}
+{% block admin_content %}
+{{ page_header("Users", breadcrumbs=[("Admin", "/admin")], action_label="Add user", action_href="/admin/users/new") }}
+<p class="lede">Local accounts and their role/status. Google sign-in links to a user by email.</p>
+<div id="users-grid"></div>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="/static/vendor/tabulator-6.3.1/tabulator.min.css">
+<script src="/static/vendor/tabulator-6.3.1/tabulator.min.js"></script>
+<script src="/static/js/register-grid.js"></script>
+<script>
+  RegisterGrid.init("users-grid", {
+    apiBase: "/api/registers/admin_users",
+    csrfToken: "{{ csrf_token(request) }}",
+    deletable: false,
+    emptyMessage: "No users yet. Use \"Add user\" to create one.",
+    columns: [
+      {title: "Email", field: "email", editor: false, formatter: "link",
+       formatterParams: {url: function(cell) { return "/admin/users/" + cell.getData().id + "/edit"; }}},
+      {title: "Role", field: "role", editor: false},
+      {title: "Status", field: "status", editor: false},
+      {title: "Google-linked", field: "google_linked", editor: false, formatter: "tickCross"},
+      {title: "Created", field: "created_at", editor: false}
+    ]
+  });
+</script>
+{% endblock %}
