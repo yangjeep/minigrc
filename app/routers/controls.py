@@ -41,10 +41,13 @@ controls_register_router = build_register_router(CONTROLS_REGISTER_CONFIG)
 
 
 @router.get("")
-def list_controls(request: Request, db: Session = Depends(get_db)):
-    controls = db.scalars(select(InternalControl)).all()
+def list_controls(request: Request):
     templates = request.app.state.templates
-    return templates.TemplateResponse(request, "controls/list.html", {"controls": controls})
+    return templates.TemplateResponse(
+        request,
+        "controls/list.html",
+        {"control_statuses": CONTROL_STATUSES, "review_frequencies": REVIEW_FREQUENCIES},
+    )
 
 
 @router.get("/{control_id}")
