@@ -19,9 +19,47 @@ from app.models import (
     RequirementNote,
 )
 from app.progress import compute_progress
+from app.registers.config import FieldSpec, RegisterConfig
+from app.registers.router import build_register_router
 from app.requirements import add_requirement
 
 router = APIRouter(prefix="/frameworks", tags=["frameworks"], dependencies=[Depends(require_login)])
+
+REQUIREMENTS_REGISTER_CONFIG = RegisterConfig(
+    name="framework-requirements",
+    model=FrameworkRequirement,
+    entity_type="framework_requirement",
+    scope_field="framework_id",
+    creatable=False,
+    deletable=False,
+    order_by=FrameworkRequirement.display_order,
+    fields=(
+        FieldSpec(name="reference_code", type="text", required=True, max_length=32),
+        FieldSpec(name="title", type="text", required=True, max_length=255),
+        FieldSpec(name="summary", type="text"),
+        FieldSpec(name="display_order", type="number"),
+        FieldSpec(
+            name="applicable",
+            type="text",
+            read_only=True,
+            compute=lambda r: r.assessment.applicable if r.assessment else None,
+        ),
+        FieldSpec(
+            name="implementation_state",
+            type="text",
+            read_only=True,
+            compute=lambda r: r.assessment.implementation_state if r.assessment else None,
+        ),
+        FieldSpec(
+            name="owner",
+            type="text",
+            read_only=True,
+            compute=lambda r: r.assessment.owner if r.assessment else "",
+        ),
+    ),
+)
+
+requirements_register_router = build_register_router(REQUIREMENTS_REGISTER_CONFIG)
 
 
 @router.get("")
