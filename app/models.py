@@ -791,6 +791,42 @@ class ExternalConnection(Base):
         return f"ExternalConnection(id={self.id!r}, name={self.name!r}, db_type={self.db_type!r})"
 
 
+JOB_STATUSES = ("pending", "running", "succeeded", "failed")
+
+
+class Job(Base):
+    """A persisted, claimable unit of background work (Feature 7's worker
+    foundation). Database-backed rather than a separate broker (Redis) —
+    see ADR #24. `payload_json`/`result_json` are plain JSON-encoded text
+    (portable across SQLite/Postgres without a JSON column type
+    dependency). Claiming uses a guarded UPDATE (WHERE status='pending')
+    rather than SELECT...FOR UPDATE SKIP LOCKED, so it works identically
+    on both dialects. See app/jobs.py for the claim/run/retry logic.
+    """
+
+    __tablename__ = "jobs"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_job_idempotency_key"),
+        CheckConstraint(f"status IN {JOB_STATUSES}", name="ck_job_status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    job_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attempts: Mapped[int] = mapped_column(default=0)
+    max_attempts: Mapped[int] = mapped_column(default=3)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    available_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    claimed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    claimed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class AuditEvent(Base):
     """Append-only record of who changed what, for auditor-facing history.
 
