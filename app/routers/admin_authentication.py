@@ -28,15 +28,43 @@ def _current_row(db: Session) -> GoogleOidcSettings | None:
     return db.scalar(select(GoogleOidcSettings).order_by(GoogleOidcSettings.updated_at.desc()).limit(1))
 
 
+def _not_usable_reason(
+    row: GoogleOidcSettings | None, resolved, has_secret: bool, public_base_url: str
+) -> str | None:
+    """Explain why the form's own fields don't already show why: `usable`
+    also depends on GRC_PUBLIC_BASE_URL (an env var, deliberately not a
+    form field — see app/google_oidc_config.py) and on the stored secret
+    actually decrypting, neither of which is otherwise visible here."""
+    if resolved.usable or row is None or not row.enabled:
+        return None
+    if not row.client_id:
+        return "Client ID is required."
+    if not has_secret:
+        return "Client secret is required."
+    if not public_base_url:
+        return (
+            "GRC_PUBLIC_BASE_URL is not set in this deployment's environment — "
+            "required to compute the OAuth redirect URI."
+        )
+    return "Stored client secret could not be decrypted — check GRC_ENCRYPTION_KEY, then re-enter it."
+
+
 @router.get("/google")
 def google_settings_form(request: Request, db: Session = Depends(get_db)):
     row = _current_row(db)
-    resolved = resolve_google_oidc_config(db, request.app.state.settings)
+    settings = request.app.state.settings
+    resolved = resolve_google_oidc_config(db, settings)
+    has_secret = bool(row and row.secret_id)
     templates = request.app.state.templates
     return templates.TemplateResponse(
         request,
         "admin/authentication/google.html",
-        {"row": row, "resolved": resolved, "has_secret": bool(row and row.secret_id)},
+        {
+            "row": row,
+            "resolved": resolved,
+            "has_secret": has_secret,
+            "not_usable_reason": _not_usable_reason(row, resolved, has_secret, settings.public_base_url),
+        },
     )
 
 

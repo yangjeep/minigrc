@@ -239,6 +239,20 @@ def test_admin_authentication_page_reflects_db_config(admin_client, app):
     assert b"test-client-secret" not in response.content
 
 
+def test_admin_page_explains_missing_public_base_url(admin_client, app):
+    """UAT finding: a fully filled-in form (enabled, client ID, secret)
+    still shows 'Not configured' when GRC_PUBLIC_BASE_URL isn't set, with
+    no indication why — see 2026-07-20 admin/OAuth/IAM/connections
+    consolidation worklog."""
+    _configure_db_google_oidc(app, auto_provision_enabled=True)
+    app.state.settings.public_base_url = ""
+
+    response = admin_client.get("/admin/authentication/google")
+    assert response.status_code == 200
+    assert b"Not configured" in response.content
+    assert b"GRC_PUBLIC_BASE_URL" in response.content
+
+
 def test_admin_can_save_google_oauth_settings(admin_client, app):
     from tests.conftest import extract_csrf_token
 
