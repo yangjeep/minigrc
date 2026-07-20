@@ -1,0 +1,12 @@
+{% extends "admin/base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}Add user · Admin · minigrc{% endblock %}
+{% block admin_content %}
+{{ page_header("Add user", breadcrumbs=[("Admin", "/admin"), ("Users", "/admin/users")]) }}
+<p class="lede">Adds an active account by email. The person signs in with Google, or an admin sets a local password later.</p>
+<form method="post" action="/admin/users">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Email <input type="email" name="email" required></label>
+  <button type="submit" class="btn btn-primary mt-2">Add user</button>
+</form>
+{% endblock %}
