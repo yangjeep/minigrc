@@ -237,3 +237,57 @@ def test_admin_authentication_page_reflects_db_config(admin_client, app):
     assert response.status_code == 200
     assert b"test-client-id" in response.content
     assert b"test-client-secret" not in response.content
+
+
+def test_admin_can_save_google_oauth_settings(admin_client, app):
+    from tests.conftest import extract_csrf_token
+
+    app.state.settings.encryption_key = TEST_KEY
+    page = admin_client.get("/admin/authentication/google")
+    csrf_token = extract_csrf_token(page.text)
+
+    response = admin_client.post(
+        "/admin/authentication/google",
+        data={
+            "enabled": "on",
+            "client_id": "new-client-id",
+            "client_secret": "brand-new-secret",
+            "allowed_domains": "example.com",
+            "auto_provision_enabled": "on",
+            "csrf_token": csrf_token,
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    with app.state.session_factory() as session:
+        row = session.scalar(select(GoogleOidcSettings))
+        assert row.enabled is True
+        assert row.client_id == "new-client-id"
+        assert row.auto_provision_enabled is True
+        assert row.secret_id is not None
+
+
+def test_saving_with_blank_secret_keeps_existing_secret(admin_client, app):
+    from tests.conftest import extract_csrf_token
+
+    _configure_db_google_oidc(app, auto_provision_enabled=True)
+    with app.state.session_factory() as session:
+        original_secret_id = session.scalar(select(GoogleOidcSettings)).secret_id
+
+    page = admin_client.get("/admin/authentication/google")
+    csrf_token = extract_csrf_token(page.text)
+    admin_client.post(
+        "/admin/authentication/google",
+        data={
+            "enabled": "on",
+            "client_id": "test-client-id",
+            "client_secret": "",
+            "allowed_domains": "",
+            "csrf_token": csrf_token,
+        },
+    )
+
+    with app.state.session_factory() as session:
+        row = session.scalar(select(GoogleOidcSettings).order_by(GoogleOidcSettings.updated_at.desc()))
+        assert row.secret_id == original_secret_id

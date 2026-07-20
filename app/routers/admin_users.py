@@ -32,7 +32,7 @@ USERS_REGISTER_CONFIG = RegisterConfig(
     creatable=False,
     deletable=False,
     bulk_enabled=False,
-    require_admin_for=frozenset({"list"}),
+    require_admin_for=frozenset({"list", "edit"}),
     fields=(
         FieldSpec(name="email", type="text", read_only=True),
         FieldSpec(name="role", type="text", read_only=True),

@@ -58,12 +58,6 @@ CONNECTIONS_REGISTER_CONFIG = RegisterConfig(
 connections_register_router = build_register_router(CONNECTIONS_REGISTER_CONFIG)
 
 
-@router.get("")
-def list_connections(request: Request):
-    templates = request.app.state.templates
-    return templates.TemplateResponse(request, "connections/list.html", {})
-
-
 @router.get("/new")
 def new_connection_form(request: Request):
     templates = request.app.state.templates

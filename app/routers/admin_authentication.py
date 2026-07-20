@@ -43,11 +43,11 @@ def google_settings_form(request: Request, db: Session = Depends(get_db)):
 @router.post("/google")
 def update_google_settings(
     request: Request,
-    enabled: str = Form(""),
+    enabled: bool = Form(False),
     client_id: str = Form(""),
     client_secret: str = Form(""),
     allowed_domains: str = Form(""),
-    auto_provision_enabled: str = Form(""),
+    auto_provision_enabled: bool = Form(False),
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
     _csrf: None = Depends(verify_csrf),
@@ -65,11 +65,11 @@ def update_google_settings(
         row = GoogleOidcSettings(updated_by=admin.email)
         db.add(row)
 
-    row.enabled = enabled == "on"
+    row.enabled = enabled
     row.client_id = client_id.strip()
     row.secret_id = secret_id
     row.allowed_domains = allowed_domains.strip()
-    row.auto_provision_enabled = auto_provision_enabled == "on"
+    row.auto_provision_enabled = auto_provision_enabled
     row.updated_by = admin.email
     db.flush()
     record_audit_event(

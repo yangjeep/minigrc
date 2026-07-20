@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-PLACEHOLDER_SLUGS = ["actions", "connectors"]
+PLACEHOLDER_SLUGS = ["actions"]
 
 VENDOR_ASSETS = [
     "app/static/vendor/bootstrap-5.3.3/bootstrap.min.css",

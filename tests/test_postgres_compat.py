@@ -17,11 +17,13 @@ from sqlalchemy import inspect, text
 from app.db import build_engine, init_db, make_session_factory
 from app.models import (
     ExternalConnection,
+    GoogleOidcSettings,
     ImportJob,
     Job,
     Secret,
     TrustCenterSection,
     TrustCenterSettings,
+    User,
 )
 
 POSTGRES_TEST_URL = os.environ.get("TEST_DATABASE_URL", "")
@@ -37,6 +39,7 @@ PIVOT_TABLES = (
     "import_jobs",
     "trust_center_settings",
     "trust_center_sections",
+    "google_oidc_settings",
 )
 
 
@@ -76,6 +79,9 @@ def test_migrations_apply_cleanly_against_postgres():
         )
         assert set(PIVOT_TABLES).issubset(tables)
 
+        user_columns = {col["name"] for col in inspect(engine).get_columns("users")}
+        assert {"status", "google_subject"}.issubset(user_columns)
+
         with engine.begin() as conn:
             conn.execute(
                 text(
@@ -105,7 +111,8 @@ def test_migrations_apply_cleanly_against_postgres():
             import_job = ImportJob(source="cli", importer_name="pg_test", created_by="pg-test")
             settings_row = TrustCenterSettings()
             section = TrustCenterSection(title="PG Test Section")
-            session.add_all([secret, connection, job, import_job, settings_row, section])
+            oidc_settings = GoogleOidcSettings(updated_by="pg-test")
+            session.add_all([secret, connection, job, import_job, settings_row, section, oidc_settings])
             session.commit()
 
             assert session.query(Secret).filter_by(name="pg-secret").one().kind == "env_ref"
@@ -114,9 +121,15 @@ def test_migrations_apply_cleanly_against_postgres():
                 session.query(TrustCenterSection).filter_by(title="PG Test Section").one().visibility
                 == "internal"
             )
+            assert session.query(GoogleOidcSettings).filter_by(updated_by="pg-test").one().enabled is False
 
             with pytest.raises(Exception):  # noqa: B017 - dialect-specific IntegrityError subclass
                 session.add(TrustCenterSection(title="Bad visibility", visibility="not-a-real-value"))
+                session.commit()
+            session.rollback()
+
+            with pytest.raises(Exception):  # noqa: B017 - dialect-specific IntegrityError subclass
+                session.add(User(email="pg-bad-status@example.com", password_hash="x", status="not-a-status"))
                 session.commit()
             session.rollback()
     finally:
