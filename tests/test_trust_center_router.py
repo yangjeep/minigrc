@@ -114,7 +114,10 @@ def test_section_detail_edit_and_publish_cycle(admin_client, app):
 
     preview = admin_client.get(f"/trust-center/admin/sections/{section_id}/preview")
     assert preview.status_code == 200
-    assert b"<h1>We are secure</h1>" in preview.content
+    # heading_offset=1: preview page has its own top-level <h1>, so an
+    # admin-authored "# heading" is shifted to <h2> to avoid a competing
+    # top-level heading in the screen-reader outline.
+    assert b"<h2>We are secure</h2>" in preview.content
 
     publish = admin_client.post(
         f"/trust-center/admin/sections/{section_id}/publish",

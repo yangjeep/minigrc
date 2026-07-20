@@ -94,6 +94,23 @@ def test_shows_published_snapshot_not_newer_draft(client, app):
     assert section_id  # keep id referenced for clarity
 
 
+def test_section_body_headings_are_shifted_below_section_title(client, app):
+    _enable_trust_center(app)
+    _make_section(
+        app,
+        title="Security overview",
+        visibility="public",
+        status="published",
+        published_body_markdown="# Encryption\n\nDetails here.",
+    )
+    response = client.get("/trust-center")
+    # heading_offset=2: body sits under this section's own <h2> title,
+    # which itself sits under the page's <h1> — an author-written "#"
+    # must not produce a second top-level heading.
+    assert b"<h3>Encryption</h3>" in response.content
+    assert b"<h1>Encryption</h1>" not in response.content
+
+
 def test_public_page_has_no_store_cache_header(client, app):
     _enable_trust_center(app)
     response = client.get("/trust-center")

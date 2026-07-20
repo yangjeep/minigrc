@@ -54,7 +54,7 @@ def public_trust_center(request: Request, db: Session = Depends(get_db)):
         {
             "id": section.id,
             "title": section.title,
-            "html": render_markdown_safe(section.published_body_markdown),
+            "html": render_markdown_safe(section.published_body_markdown, heading_offset=2),
             "review_date": section.review_date,
             "expiry_date": section.expiry_date,
             "linked_policy": (
@@ -72,7 +72,7 @@ def public_trust_center(request: Request, db: Session = Depends(get_db)):
         "trust_center/public.html",
         {
             "settings": settings,
-            "intro_html": render_markdown_safe(settings.intro_markdown),
+            "intro_html": render_markdown_safe(settings.intro_markdown, heading_offset=1),
             "sections": rendered_sections,
         },
     )
