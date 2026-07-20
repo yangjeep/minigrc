@@ -1,7 +1,8 @@
 {% extends "base.html" %}
+{% from "_page_header.html" import page_header %}
 {% block title %}Dashboard · minigrc{% endblock %}
 {% block content %}
-<h1>Dashboard</h1>
+{{ page_header("Dashboard") }}
 <p class="lede">Lightweight, self-hosted ISMS/GRC tool for one organization's compliance program. Not a replacement for Vanta, Drata, Wiz, or Aikido.</p>
 
 <div class="stat-row">
@@ -84,7 +85,7 @@
 
 <h2>Where things live</h2>
 <ul>
-  <li><a href="/frameworks">Frameworks</a>, <a href="/controls">Controls</a>, <a href="/policies">Policies</a>, <a href="/risks">Risks</a>, <a href="/audit-log">Audit Log</a> — implemented.</li>
-  <li><a href="/evidence">Evidence</a>, <a href="/actions">Actions</a>, <a href="/connectors">Connectors</a>, <a href="/trust-center">Trust Center</a> — placeholders, see each page for status.</li>
+  <li><a href="/frameworks">Frameworks</a>, <a href="/controls">Controls</a>, <a href="/policies">Policies</a>, <a href="/risks">Risks</a>, <a href="/admin/audit-log">Audit Log</a>, <a href="/admin/connections">Connections</a> — implemented.</li>
+  <li><a href="/evidence">Evidence</a>, <a href="/actions">Actions</a>, <a href="/trust-center">Trust Center</a> — placeholders, see each page for status.</li>
 </ul>
 {% endblock %}
