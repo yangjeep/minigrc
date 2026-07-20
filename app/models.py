@@ -402,6 +402,7 @@ class VendorUserSnapshotRow(Base):
 
 
 USER_ROLES = ("user", "admin")
+USER_STATUSES = ("active", "disabled", "pending")
 
 
 class User(Base):
@@ -415,14 +416,34 @@ class User(Base):
     authenticated action remains available to any logged-in user (see
     docs/decisions/architectural-decisions.md). `person_id` optionally links
     this login identity to the shared `Person` directory.
+
+    `status` gates login (see `app/deps.py::require_login`): `"active"` can
+    sign in normally, `"disabled"` is rejected outright, `"pending"` is an
+    account awaiting administrator approval (only reachable today via the
+    Google OAuth first-login policy — see `app/google_oidc.py`). `role` and
+    `status` are independent: an admin can be disabled, a pending user has
+    no role significance until approved.
+
+    `google_subject` is Google's stable, non-reassignable account
+    identifier (`sub` claim) — persisted once a Google sign-in links to
+    this user, so a later email change or another account claiming the
+    same email address can be told apart from the original identity
+    (see `app/routers/google_oidc.py`).
     """
 
     __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint(f"role IN {USER_ROLES}", name="ck_user_role"),
+        CheckConstraint(f"status IN {USER_STATUSES}", name="ck_user_status"),
+        UniqueConstraint("google_subject", name="uq_user_google_subject"),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    google_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
 
