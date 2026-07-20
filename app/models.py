@@ -870,6 +870,89 @@ class ImportJob(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
 
 
+TRUST_CENTER_SECTION_VISIBILITY = ("public", "restricted", "internal")
+TRUST_CENTER_SECTION_STATUSES = ("draft", "published")
+
+
+class TrustCenterSettings(Base):
+    """Single-row configuration for the Trust Center feature.
+
+    Deliberately one row, not a generic app-settings table (see
+    CLAUDE.md's "no generic abstraction without a second caller") —
+    `app/trust_center.py::get_or_create_settings` enforces the
+    singleton. `enabled` gates whether the public route (a later
+    feature) responds at all; everything else is branding/contact copy
+    shown alongside published sections.
+    """
+
+    __tablename__ = "trust_center_settings"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    enabled: Mapped[bool] = mapped_column(default=False)
+    title: Mapped[str] = mapped_column(String(255), default="Trust Center")
+    intro_markdown: Mapped[str] = mapped_column(Text, default="")
+    contact_email: Mapped[str] = mapped_column(String(255), default="")
+    support_url: Mapped[str] = mapped_column(String(2048), default="")
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+class TrustCenterSection(Base):
+    """One ordered block of public-facing Trust Center content.
+
+    Holds both the current draft (`draft_body_markdown`, always
+    editable) and a snapshot of what was last published
+    (`published_body_markdown`/`published_at`/`published_by_user_id`).
+    Publishing copies draft -> published; unpublishing flips `status`
+    back to "draft" without clearing the last published snapshot, so
+    re-publishing is a one-click restore and the history stays visible
+    via AuditEvent rows (see app/audit.py) rather than a second
+    versioned table — this content is lightweight CMS copy, not
+    immutable evidence like PolicyVersion.
+
+    `linked_framework_id`/`linked_policy_id` are optional references
+    into existing internal records (never a copy of their data) so a
+    section can point at "our ISO 27001 program" or a specific
+    approved policy without duplicating fields — a later public route
+    is responsible for rendering only the safe subset (e.g. a policy's
+    title and an approved-version download, never internal notes).
+
+    `visibility` includes "restricted" in the schema now even though no
+    NDA/gated-access workflow exists yet, so a future feature can add
+    one without a migration; only "public" sections are ever meant to
+    reach an unauthenticated visitor.
+    """
+
+    __tablename__ = "trust_center_sections"
+    __table_args__ = (
+        CheckConstraint("length(trim(title)) > 0", name="ck_trust_center_section_title_not_blank"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    visibility: Mapped[str] = mapped_column(String(16), nullable=False, default="internal")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    display_order: Mapped[int] = mapped_column(default=0)
+
+    draft_body_markdown: Mapped[str] = mapped_column(Text, default="")
+    published_body_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    published_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    published_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    review_date: Mapped[datetime.date | None] = mapped_column(nullable=True)
+    expiry_date: Mapped[datetime.date | None] = mapped_column(nullable=True)
+
+    linked_framework_id: Mapped[str | None] = mapped_column(ForeignKey("frameworks.id"), nullable=True)
+    linked_policy_id: Mapped[str | None] = mapped_column(ForeignKey("policies.id"), nullable=True)
+
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    linked_framework: Mapped[Framework | None] = relationship(foreign_keys=[linked_framework_id])
+    linked_policy: Mapped[Policy | None] = relationship(foreign_keys=[linked_policy_id])
+    published_by: Mapped[User | None] = relationship(foreign_keys=[published_by_user_id])
+
+
 class AuditEvent(Base):
     """Append-only record of who changed what, for auditor-facing history.
 
