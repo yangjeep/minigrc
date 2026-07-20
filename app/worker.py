@@ -14,9 +14,11 @@ import os
 import signal
 import time
 import uuid
+from pathlib import Path
 
 from app.config import get_settings
 from app.db import build_engine, init_db, make_session_factory
+from app.import_directory import run_directory_once
 from app.jobs import process_next_job
 from app.logging_config import configure_logging
 
@@ -37,7 +39,14 @@ def _handle_shutdown_signal(signum, frame) -> None:  # noqa: ANN001 - signal han
     _shutdown_requested = True
 
 
-def run_forever(session_factory, *, worker_id: str, poll_interval: float = POLL_INTERVAL_SECONDS) -> None:
+def run_forever(
+    session_factory,
+    *,
+    worker_id: str,
+    poll_interval: float = POLL_INTERVAL_SECONDS,
+    watch_dir: Path | None = None,
+    watch_importer: str | None = None,
+) -> None:
     logger.info("worker %s starting", worker_id)
     while not _shutdown_requested:
         try:
@@ -45,6 +54,16 @@ def run_forever(session_factory, *, worker_id: str, poll_interval: float = POLL_
         except Exception:
             logger.exception("worker %s: unexpected error processing job", worker_id)
             processed = False
+
+        if not processed and watch_dir is not None and watch_importer:
+            try:
+                processed = run_directory_once(
+                    session_factory, root=watch_dir, importer_name=watch_importer, actor=worker_id
+                )
+            except Exception:
+                logger.exception("worker %s: unexpected error processing watched directory", worker_id)
+                processed = False
+
         if not processed:
             time.sleep(poll_interval)
     logger.info("worker %s shut down cleanly", worker_id)
@@ -63,7 +82,18 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _handle_shutdown_signal)
     signal.signal(signal.SIGINT, _handle_shutdown_signal)
 
-    run_forever(session_factory, worker_id=worker_id)
+    watch_dir = Path(settings.import_watch_dir) if settings.import_watch_dir else None
+    if watch_dir is not None:
+        logger.info(
+            "watching import directory %s with importer '%s'", watch_dir, settings.import_watch_importer
+        )
+
+    run_forever(
+        session_factory,
+        worker_id=worker_id,
+        watch_dir=watch_dir,
+        watch_importer=settings.import_watch_importer or None,
+    )
     return 0
 
 

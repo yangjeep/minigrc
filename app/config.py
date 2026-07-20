@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     session_ttl_hours: int = 24 * 7
     session_cookie_secure: bool = False
 
+    # Optional watched import directory (Feature 9). The worker only
+    # watches a directory when both are set — no default path, since a
+    # default would silently start watching an arbitrary location.
+    import_watch_dir: str = ""
+    import_watch_importer: str = ""
+
     # Public base URL this app is served at (e.g. "https://grc.example.com"),
     # used only to derive OAuth redirect URIs safely — never trust the
     # request's Host header for this. Required for Google OIDC login.
