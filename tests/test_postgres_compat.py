@@ -14,9 +14,30 @@ import os
 import pytest
 from sqlalchemy import inspect, text
 
-from app.db import build_engine, init_db
+from app.db import build_engine, init_db, make_session_factory
+from app.models import (
+    ExternalConnection,
+    ImportJob,
+    Job,
+    Secret,
+    TrustCenterSection,
+    TrustCenterSettings,
+)
 
 POSTGRES_TEST_URL = os.environ.get("TEST_DATABASE_URL", "")
+
+# Tables added by this platform pivot (Features 4-12) — the pre-pivot
+# assertion below only covered the original MVP schema, so a Postgres-only
+# portability bug in any of these (e.g. a CHECK constraint that doesn't
+# compile, a dialect-specific default) would never have been caught by CI.
+PIVOT_TABLES = (
+    "secrets",
+    "external_connections",
+    "jobs",
+    "import_jobs",
+    "trust_center_settings",
+    "trust_center_sections",
+)
 
 
 def test_build_engine_defaults_to_sqlite_for_bare_path(tmp_path):
@@ -53,6 +74,7 @@ def test_migrations_apply_cleanly_against_postgres():
         assert {"frameworks", "framework_requirements", "internal_controls", "risks", "users"}.issubset(
             tables
         )
+        assert set(PIVOT_TABLES).issubset(tables)
 
         with engine.begin() as conn:
             conn.execute(
@@ -67,6 +89,36 @@ def test_migrations_apply_cleanly_against_postgres():
                 text("SELECT name FROM frameworks WHERE id = 'pgtest0000000000000000000000000'")
             )
             assert row.scalar_one() == "PG Test"
+
+        # ORM-level round trip through every pivot table — exercises each
+        # table's CHECK constraints, defaults, and column types against a
+        # real Postgres server, not just "does CREATE TABLE succeed."
+        session_factory = make_session_factory(engine)
+        with session_factory() as session:
+            secret = Secret(
+                name="pg-secret", kind="env_ref", env_var_name="PG_TEST_SECRET", created_by="pg-test"
+            )
+            connection = ExternalConnection(
+                name="pg-connection", db_type="postgres", secret_id=None, created_by="pg-test"
+            )
+            job = Job(job_type="pg_test", created_by="pg-test")
+            import_job = ImportJob(source="cli", importer_name="pg_test", created_by="pg-test")
+            settings_row = TrustCenterSettings()
+            section = TrustCenterSection(title="PG Test Section")
+            session.add_all([secret, connection, job, import_job, settings_row, section])
+            session.commit()
+
+            assert session.query(Secret).filter_by(name="pg-secret").one().kind == "env_ref"
+            assert session.query(Job).filter_by(job_type="pg_test").one().status == "pending"
+            assert (
+                session.query(TrustCenterSection).filter_by(title="PG Test Section").one().visibility
+                == "internal"
+            )
+
+            with pytest.raises(Exception):  # noqa: B017 - dialect-specific IntegrityError subclass
+                session.add(TrustCenterSection(title="Bad visibility", visibility="not-a-real-value"))
+                session.commit()
+            session.rollback()
     finally:
         with engine.begin() as conn:
             conn.execute(text("DROP SCHEMA public CASCADE"))
