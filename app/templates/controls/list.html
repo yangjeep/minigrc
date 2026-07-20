@@ -1,23 +1,43 @@
 {% extends "base.html" %}
 {% block title %}Controls · minigrc{% endblock %}
 {% block content %}
-<h1>Internal Controls</h1>
-<table>
-  <thead>
-    <tr><th>Name</th><th>Owner</th><th>Status</th><th>Review frequency</th><th>Mapped requirements</th></tr>
-  </thead>
-  <tbody>
-    {% for control in controls %}
-    <tr>
-      <td><a href="/controls/{{ control.id }}">{{ control.name }}</a></td>
-      <td>{{ control.owner }}</td>
-      <td><span class="badge badge-{{ control.status }}">{{ control.status }}</span></td>
-      <td>{{ control.review_frequency }}</td>
-      <td>{{ control.mappings|length }}</td>
-    </tr>
-    {% else %}
-    <tr><td colspan="5">No controls yet.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="mb-0">Internal Controls</h1>
+  <button type="button" id="controls-add-row" class="btn btn-primary">
+    <i class="bi bi-plus-lg me-1"></i>Add control
+  </button>
+</div>
+<div id="controls-grid"></div>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="/static/vendor/tabulator-6.3.1/tabulator.min.css">
+<script src="/static/vendor/tabulator-6.3.1/tabulator.min.js"></script>
+<script src="/static/js/register-grid.js"></script>
+<script>
+  RegisterGrid.init("controls-grid", {
+    apiBase: "/api/registers/controls",
+    csrfToken: "{{ csrf_token(request) }}",
+    addRowButtonId: "controls-add-row",
+    emptyMessage: "No controls yet. Use \"Add control\" to create one.",
+    newRowDefaults: {
+      name: "New control",
+      owner: "",
+      status: "not_started",
+      review_frequency: "annual",
+      description: ""
+    },
+    columns: [
+      {title: "Name", field: "name", editor: "input", formatter: "link",
+       formatterParams: {url: function(cell) { return "/controls/" + cell.getData().id; }}},
+      {title: "Owner", field: "owner", editor: "input"},
+      {title: "Status", field: "status", editor: "list",
+       editorParams: {values: {{ control_statuses | list | tojson }}}},
+      {title: "Review frequency", field: "review_frequency", editor: "list",
+       editorParams: {values: {{ review_frequencies | list | tojson }}}},
+      {title: "Description", field: "description", editor: "input"},
+      {title: "Mapped requirements", field: "mapped_requirements", editor: false, hozAlign: "center"}
+    ]
+  });
+</script>
 {% endblock %}
