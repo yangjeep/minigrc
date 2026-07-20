@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<nav aria-label="Admin section" class="mb-4">
+  <ul class="nav nav-pills">
+    {% for label, href in admin_nav_items %}
+    <li class="nav-item">
+      <a class="nav-link{% if request.url.path == href %} active{% endif %}" href="{{ href }}">{{ label }}</a>
+    </li>
+    {% endfor %}
+  </ul>
+</nav>
+{% block admin_content %}{% endblock %}
+{% endblock %}

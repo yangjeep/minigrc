@@ -1,0 +1,18 @@
+{% macro page_header(title, breadcrumbs=[], action_label=None, action_href=None) %}
+{% if breadcrumbs %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    {% for label, href in breadcrumbs %}
+    <li class="breadcrumb-item"><a href="{{ href }}">{{ label }}</a></li>
+    {% endfor %}
+    <li class="breadcrumb-item active" aria-current="page">{{ title }}</li>
+  </ol>
+</nav>
+{% endif %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">{{ title }}</h1>
+  {% if action_label and action_href %}
+  <a href="{{ action_href }}" class="btn btn-primary">{{ action_label }}</a>
+  {% endif %}
+</div>
+{% endmacro %}
