@@ -239,6 +239,23 @@ def test_admin_authentication_page_reflects_db_config(admin_client, app):
     assert b"test-client-secret" not in response.content
 
 
+def test_login_page_shows_google_link_for_db_only_config(client, app):
+    """UAT finding: the login page's 'Sign in with Google' link only ever
+    checked the legacy env-var-derived Settings.google_oidc_enabled, never
+    the DB-backed GoogleOidcSettings this PR's Admin UI writes to — so an
+    admin configuring Google OAuth entirely through Admin > Authentication
+    (the documented, only first-class path per issue #7) got a login page
+    with no Google link at all. See 2026-07-20 admin/OAuth/IAM/connections
+    consolidation worklog."""
+    _configure_db_google_oidc(app, auto_provision_enabled=True)
+    assert app.state.settings.google_oidc_client_id == ""  # legacy env path is NOT configured
+
+    response = client.get("/login")
+    assert response.status_code == 200
+    assert b"/auth/google/login" in response.content
+    assert b"Sign in with Google" in response.content
+
+
 def test_admin_page_explains_missing_public_base_url(admin_client, app):
     """UAT finding: a fully filled-in form (enabled, client ID, secret)
     still shows 'Not configured' when GRC_PUBLIC_BASE_URL isn't set, with

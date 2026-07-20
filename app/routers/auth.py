@@ -12,6 +12,7 @@ from app.audit import record_audit_event
 from app.config import Settings
 from app.deps import get_db, require_login, verify_csrf
 from app.flash import redirect_with_flash
+from app.google_oidc_config import resolve_google_oidc_config
 from app.models import User, UserSession
 from app.security import (
     SESSION_COOKIE_NAME,
@@ -54,12 +55,11 @@ def start_user_session(db: Session, user: User, settings: Settings) -> RedirectR
 
 
 @router.get("/login")
-def login_form(request: Request):
+def login_form(request: Request, db: Session = Depends(get_db)):
     settings = request.app.state.settings
     templates = request.app.state.templates
-    return templates.TemplateResponse(
-        request, "login.html", {"google_oidc_enabled": settings.google_oidc_enabled}
-    )
+    resolved = resolve_google_oidc_config(db, settings)
+    return templates.TemplateResponse(request, "login.html", {"google_oidc_enabled": resolved.usable})
 
 
 @router.post("/login")
