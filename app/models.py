@@ -702,6 +702,47 @@ class EvidenceControlMapping(Base):
     control: Mapped[InternalControl] = relationship()
 
 
+SECRET_KINDS = ("encrypted", "env_ref")
+
+
+class Secret(Base):
+    """A named credential, stored either app-encrypted or as an external reference.
+
+    Shared foundation for external database connections (Feature 6) and
+    future integration credentials — never returns its stored value
+    through a serializer, never logs it, and its __repr__ deliberately
+    omits `ciphertext`/`env_var_name`'s resolved value. See
+    app/secrets.py for the create/resolve service functions and
+    app/crypto.py for the underlying Fernet encryption. Two modes:
+    `encrypted` (ciphertext set, resolved via GRC_ENCRYPTION_KEY) or
+    `env_ref` (env_var_name set, resolved from the process environment
+    at use time — for Kubernetes Secret-mounted-as-env-var deployments).
+    """
+
+    __tablename__ = "secrets"
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_secret_name"),
+        CheckConstraint(f"kind IN {SECRET_KINDS}", name="ck_secret_kind"),
+        CheckConstraint(
+            "(kind = 'encrypted' AND ciphertext IS NOT NULL AND env_var_name IS NULL) OR "
+            "(kind = 'env_ref' AND env_var_name IS NOT NULL AND ciphertext IS NULL)",
+            name="ck_secret_kind_fields",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    env_var_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    def __repr__(self) -> str:
+        return f"Secret(id={self.id!r}, name={self.name!r}, kind={self.kind!r})"
+
+
 class AuditEvent(Base):
     """Append-only record of who changed what, for auditor-facing history.
 
