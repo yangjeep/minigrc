@@ -25,6 +25,7 @@ from app.routers import (
     audit_log,
     auth,
     aws_connector,
+    connections,
     controls,
     dashboard,
     evidence,
@@ -55,6 +56,7 @@ NAV_ITEMS = [
     ("Vendors", "/vendors"),
     ("Actions", "/actions"),
     ("Connectors", "/connectors"),
+    ("Connections", "/connections"),
     ("Trust Center", "/trust-center"),
     ("Audit Log", "/audit-log"),
 ]
@@ -134,6 +136,8 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
     app.include_router(vendor_systems.router)
     app.include_router(google_drive.router)
     app.include_router(aws_connector.router)
+    app.include_router(connections.router)
+    app.include_router(connections.connections_register_router)
     app.include_router(evidence.router)
     app.include_router(audit_log.router)
     # placeholders.router registers a catch-all "/{slug}" — it must be

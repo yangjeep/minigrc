@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit connection" if connection else "New connection" }} · minigrc{% endblock %}
+{% block content %}
+<p><a href="/connections">&larr; Connections</a></p>
+<h1>{{ "Edit " ~ connection.name if connection else "New connection" }}</h1>
+
+<form method="post" action="{{ '/connections/' ~ connection.id ~ '/edit' if connection else '/connections' }}" class="row g-3" style="max-width: 640px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
+  <div class="col-12">
+    <label class="form-label" for="name">Name</label>
+    <input class="form-control" type="text" id="name" name="name" value="{{ connection.name if connection else '' }}" required>
+  </div>
+
+  <div class="col-12">
+    <label class="form-label" for="db_type">Database type</label>
+    <select class="form-select" id="db_type" name="db_type" required>
+      {% for t in db_types %}
+      <option value="{{ t }}" {% if connection and connection.db_type == t %}selected{% endif %}>{{ t }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="col-8">
+    <label class="form-label" for="host">Host <span class="text-secondary">(postgres/mysql)</span></label>
+    <input class="form-control" type="text" id="host" name="host" value="{{ connection.host if connection and connection.host else '' }}">
+  </div>
+  <div class="col-4">
+    <label class="form-label" for="port">Port</label>
+    <input class="form-control" type="number" id="port" name="port" value="{{ connection.port if connection and connection.port else '' }}">
+  </div>
+
+  <div class="col-12">
+    <label class="form-label" for="database_name">Database name</label>
+    <input class="form-control" type="text" id="database_name" name="database_name" value="{{ connection.database_name if connection and connection.database_name else '' }}">
+  </div>
+
+  <div class="col-12">
+    <label class="form-label" for="sqlite_path">SQLite file path <span class="text-secondary">(sqlite only)</span></label>
+    <input class="form-control" type="text" id="sqlite_path" name="sqlite_path" value="{{ connection.sqlite_path if connection and connection.sqlite_path else '' }}">
+  </div>
+
+  <div class="col-12">
+    <label class="form-label" for="username">Username</label>
+    <input class="form-control" type="text" id="username" name="username" value="{{ connection.username if connection and connection.username else '' }}" autocomplete="off">
+  </div>
+
+  <div class="col-12">
+    <label class="form-label" for="secret_value">
+      {{ "Password / connection URL (leave blank to keep existing)" if connection else "Password / connection URL" }}
+    </label>
+    <input class="form-control" type="password" id="secret_value" name="secret_value" autocomplete="new-password" placeholder="{{ '••••••••' if connection and connection.secret_id else '' }}">
+    <div class="form-text">Encrypted at rest. Never displayed again after saving — use "Test connection" to verify it still works. For "generic", paste the full SQLAlchemy URL here.</div>
+  </div>
+
+  <div class="col-12">
+    <label class="form-label" for="tls_mode">TLS mode</label>
+    <select class="form-select" id="tls_mode" name="tls_mode">
+      {% for m in tls_modes %}
+      <option value="{{ m }}" {% if connection and connection.tls_mode == m %}selected{% elif not connection and m == "prefer" %}selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="col-12">
+    <label class="form-label" for="owner">Owner</label>
+    <input class="form-control" type="text" id="owner" name="owner" value="{{ connection.owner if connection else '' }}">
+  </div>
+
+  <div class="col-12 form-check">
+    <input class="form-check-input" type="checkbox" id="enabled" name="enabled" value="true" {% if not connection or connection.enabled %}checked{% endif %}>
+    <label class="form-check-label" for="enabled">Enabled</label>
+  </div>
+
+  <div class="col-12 d-flex gap-2">
+    <button type="submit" class="btn btn-primary">{{ "Save changes" if connection else "Create connection" }}</button>
+    {% if connection %}
+    <a href="#" class="btn btn-outline-secondary" onclick="document.getElementById('test-form').submit(); return false;">Test connection</a>
+    {% endif %}
+  </div>
+</form>
+
+{% if connection %}
+<form id="test-form" method="post" action="/connections/{{ connection.id }}/test" class="d-none">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+</form>
+<form method="post" action="/connections/{{ connection.id }}/delete" class="mt-4" onsubmit="return confirm('Delete this connection?');">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit" class="btn btn-outline-danger btn-sm">Delete connection</button>
+</form>
+{% if connection.last_test_status != "untested" %}
+<p class="mt-3 text-secondary">
+  Last test: <span class="badge {{ 'text-bg-success' if connection.last_test_status == 'success' else 'text-bg-danger' }}">{{ connection.last_test_status }}</span>
+  {{ connection.last_test_message }}
+  {% if connection.last_tested_at %}({{ connection.last_tested_at.strftime("%Y-%m-%d %H:%M UTC") }}){% endif %}
+</p>
+{% endif %}
+{% endif %}
+{% endblock %}

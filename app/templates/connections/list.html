@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Connections · minigrc{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h1 class="mb-0">External Database Connections</h1>
+    <p class="lede mb-0">Read-only connections to customer/organization systems, separate from this app's own database. Admin-only.</p>
+  </div>
+  <a href="/connections/new" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Add connection</a>
+</div>
+<div id="connections-grid"></div>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="/static/vendor/tabulator-6.3.1/tabulator.min.css">
+<script src="/static/vendor/tabulator-6.3.1/tabulator.min.js"></script>
+<script src="/static/js/register-grid.js"></script>
+<script>
+  RegisterGrid.init("connections-grid", {
+    apiBase: "/api/registers/connections",
+    csrfToken: "{{ csrf_token(request) }}",
+    deletable: false,
+    emptyMessage: "No connections yet. Use \"Add connection\" to create one.",
+    columns: [
+      {title: "Name", field: "name", editor: false, formatter: "link",
+       formatterParams: {url: function(cell) { return "/connections/" + cell.getData().id + "/edit"; }}},
+      {title: "Type", field: "db_type", editor: false},
+      {title: "Host", field: "host", editor: false},
+      {title: "Database", field: "database_name", editor: false},
+      {title: "Enabled", field: "enabled", editor: false, formatter: "tickCross"},
+      {title: "Owner", field: "owner", editor: false},
+      {title: "Last test", field: "last_test_status", editor: false},
+      {title: "Last tested", field: "last_tested_at", editor: false}
+    ]
+  });
+</script>
+{% endblock %}
