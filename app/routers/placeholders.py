@@ -34,14 +34,6 @@ PLACEHOLDERS = {
         ),
         "source_of_truth": "External systems; this app stores results",
     },
-    "trust-center": {
-        "title": "Trust Center",
-        "status": "Not implemented.",
-        "responsibility": (
-            "A read-only projection of approved public information about the ISMS, for prospects/customers."
-        ),
-        "source_of_truth": "Internal — curated subset of this app's data",
-    },
 }
 
 

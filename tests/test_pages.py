@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-PLACEHOLDER_SLUGS = ["actions", "connectors", "trust-center"]
+PLACEHOLDER_SLUGS = ["actions", "connectors"]
 
 VENDOR_ASSETS = [
     "app/static/vendor/bootstrap-5.3.3/bootstrap.min.css",
@@ -106,7 +106,7 @@ def test_health_does_not_require_auth(client):
 
 @pytest.mark.parametrize(
     "path",
-    ["/", "/frameworks", "/risks", "/policies", "/audit-log", "/trust-center"],
+    ["/", "/frameworks", "/risks", "/policies", "/audit-log"],
 )
 def test_pages_render_bootstrap_shell(logged_in_client, path):
     response = logged_in_client.get(path)
@@ -118,6 +118,15 @@ def test_pages_render_bootstrap_shell(logged_in_client, path):
     assert b"/static/vendor/bootstrap-5.3.3/bootstrap.min.css" in html
     assert b"/static/vendor/bootstrap-icons-1.11.3/bootstrap-icons.css" in html
     assert b"/static/vendor/bootstrap-5.3.3/bootstrap.bundle.min.js" in html
+
+
+def test_trust_center_admin_renders_bootstrap_shell(admin_client):
+    response = admin_client.get("/trust-center/admin")
+    assert response.status_code == 200
+    html = response.content
+    assert b'id="sidebarOffcanvas"' in html
+    assert b'aria-label="Primary"' in html
+    assert b"/static/vendor/bootstrap-5.3.3/bootstrap.min.css" in html
 
 
 @pytest.mark.parametrize("asset_path", VENDOR_ASSETS)
