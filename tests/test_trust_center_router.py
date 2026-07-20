@@ -66,6 +66,16 @@ def test_create_section_via_register_api_as_admin(admin_client, app):
     assert body["stale"] is False
 
 
+def test_sections_list_via_register_api_requires_admin(logged_in_client):
+    response = logged_in_client.get("/api/registers/trust-center-sections")
+    assert response.status_code == 403
+
+
+def test_sections_list_via_register_api_allows_admin(admin_client):
+    response = admin_client.get("/api/registers/trust-center-sections")
+    assert response.status_code == 200
+
+
 def test_create_section_via_register_api_as_regular_user_forbidden(logged_in_client):
     page = logged_in_client.get("/")
     csrf_token = extract_csrf_token(page.text)
