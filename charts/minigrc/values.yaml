@@ -1,0 +1,97 @@
+# Default values — a local/evaluation shape. See values-production.yaml
+# for the recommended production overrides (external Postgres, real
+# resource limits, ingress enabled).
+
+image:
+  repository: minigrc
+  tag: latest
+  pullPolicy: IfNotPresent
+
+web:
+  replicaCount: 1
+  port: 8000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+worker:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  tls:
+    enabled: false
+    secretName: ""
+  annotations: {}
+
+# Non-secret application configuration, merged into a ConfigMap and
+# consumed as env vars by web + worker + the migration Job. Do not put
+# credentials here — see externalSecret below.
+config:
+  GRC_LOG_LEVEL: "INFO"
+  GRC_APP_ENV: "production"
+  GRC_SESSION_COOKIE_SECURE: "true"
+
+# This chart never creates a Secret manifest. Point externalSecret.name
+# at a Secret your cluster's secret-management tooling already manages
+# (sealed-secrets, External Secrets Operator, manually applied, etc.)
+# containing at minimum: GRC_ENCRYPTION_KEY. Add DATABASE_URL,
+# GRC_GOOGLE_OIDC_CLIENT_SECRET, etc. as your deployment needs them — all
+# keys in the named Secret are mounted as env vars via envFrom.
+externalSecret:
+  name: "minigrc-secrets"
+
+persistence:
+  # Only meaningful for single-replica deployments (SQLite / local import
+  # directory). Set enabled: false once running against external
+  # Postgres with no local import directory — see values-production.yaml.
+  enabled: true
+  size: 5Gi
+  storageClassName: ""
+  accessMode: ReadWriteOnce
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop: ["ALL"]
+
+migrationJob:
+  # Runs `python -m app.cli migrate` once per install/upgrade, before web
+  # and worker pods start — see templates/migration-job.yaml's Helm hook
+  # annotations.
+  backoffLimit: 2
+
+# Disabled by default — this chart does not manage a production Postgres.
+# See docs/deployment/kubernetes.md for the recommended external managed
+# Postgres path. This flag exists only to document the decision, not to
+# enable a bundled StatefulSet (this chart intentionally has none).
+bundledPostgres:
+  enabled: false

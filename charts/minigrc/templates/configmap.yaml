@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "minigrc.fullname" . }}-config
+  labels:
+    {{- include "minigrc.labels" . | nindent 4 }}
+data:
+  GRC_DATA_DIR: "/data"
+  {{- range $key, $value := .Values.config }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
