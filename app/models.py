@@ -20,7 +20,7 @@ from __future__ import annotations
 import datetime
 import uuid
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -799,15 +799,20 @@ class Job(Base):
     foundation). Database-backed rather than a separate broker (Redis) —
     see ADR #24. `payload_json`/`result_json` are plain JSON-encoded text
     (portable across SQLite/Postgres without a JSON column type
-    dependency). Claiming uses a guarded UPDATE (WHERE status='pending')
-    rather than SELECT...FOR UPDATE SKIP LOCKED, so it works identically
-    on both dialects. See app/jobs.py for the claim/run/retry logic.
+    dependency). Claiming uses a guarded UPDATE (WHERE status='pending',
+    or the full stale-running predicate for reclaim) rather than
+    SELECT...FOR UPDATE SKIP LOCKED, so it works on both dialects without
+    a dialect-specific locking clause. See app/jobs.py for the claim/run/
+    retry logic and its regression test for the TOCTOU fix on the
+    stale-running reclaim path.
     """
 
     __tablename__ = "jobs"
     __table_args__ = (
         UniqueConstraint("idempotency_key", name="uq_job_idempotency_key"),
         CheckConstraint(f"status IN {JOB_STATUSES}", name="ck_job_status"),
+        Index("ix_jobs_status_available_at", "status", "available_at"),
+        Index("ix_jobs_status_claimed_at", "status", "claimed_at"),
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
@@ -926,6 +931,11 @@ class TrustCenterSection(Base):
     __tablename__ = "trust_center_sections"
     __table_args__ = (
         CheckConstraint("length(trim(title)) > 0", name="ck_trust_center_section_title_not_blank"),
+        CheckConstraint(
+            f"visibility IN {TRUST_CENTER_SECTION_VISIBILITY}", name="ck_trust_center_section_visibility"
+        ),
+        CheckConstraint(f"status IN {TRUST_CENTER_SECTION_STATUSES}", name="ck_trust_center_section_status"),
+        Index("ix_trust_center_sections_visibility_status", "visibility", "status"),
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
