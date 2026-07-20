@@ -467,3 +467,30 @@ named without pre-specifying.
 single-tenant *scale* assumption in `docs/product-scope.md`. Does not
 supersede any auth, audit, CSRF, id-generation, or immutability decision
 listed above.
+
+## 25. Final hardening pass: cross-verified findings over single-source ones
+
+**Decision:** Before closing the platform pivot, four specialist review
+agents (security, database/migrations, general code quality,
+accessibility) ran in parallel against the full diff. Findings were
+prioritized by whether more than one review independently surfaced the
+same issue, not by a single agent's severity label alone — the
+stale-job-reclaim race (`app/jobs.py`) was flagged independently by two
+reviews from different angles and became the top-priority fix. Every
+fix shipped with a regression test proving the specific failure mode,
+not just a generic "add error handling" patch. Findings that were real
+but low-probability/low-impact (an `ImportJob` idempotency race window)
+or pure maintainability nits (one long function) were documented as
+accepted gaps in `docs/worklog/2026-07-20-final-hardening.md` rather
+than fixed under time pressure — a hardening pass improves the
+highest-leverage issues, it doesn't chase every finding to zero.
+
+**Rationale:** A single review agent can produce plausible-sounding but
+wrong findings; a real bug independently found from two different
+analysis angles (a database-correctness review and a general
+code-quality review, in this case) is a much stronger signal than either
+alone. Regression tests over prose fixes ensure the specific bug can't
+silently regress in a future feature.
+
+**Supersedes:** Nothing — this documents *process*, not a technical
+choice superseding an earlier one.
