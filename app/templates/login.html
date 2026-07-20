@@ -8,23 +8,26 @@
 </head>
 <body>
   <div class="login-page">
-    <form method="post" action="/login" class="login-form">
+    <div class="login-form">
       <h1>minigrc</h1>
       <p class="lede">Sign in to your ISMS/GRC workspace.</p>
       {% set flash = request.query_params.get('flash') %}
       {% if flash %}
       <div class="flash flash-{{ request.query_params.get('flash_kind', 'success') }}" role="status">{{ flash }}</div>
       {% endif %}
-      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-      <label for="email">Email</label>
-      <input type="email" id="email" name="email" autocomplete="username" required autofocus>
-      <label for="password">Password</label>
-      <input type="password" id="password" name="password" autocomplete="current-password" required>
-      <button type="submit">Sign in</button>
       {% if google_oidc_enabled %}
-      <p class="lede"><a href="/auth/google/login">Sign in with Google</a></p>
+      <a class="btn btn-google" href="/auth/google/login">Sign in with Google</a>
+      <p class="lede login-divider">or sign in with a local account (break-glass)</p>
       {% endif %}
-    </form>
+      <form method="post" action="/login">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" autocomplete="username" required {% if not google_oidc_enabled %}autofocus{% endif %}>
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+        <button type="submit">Sign in</button>
+      </form>
+    </div>
   </div>
 </body>
 </html>

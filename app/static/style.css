@@ -111,6 +111,24 @@ button {
   width: fit-content;
 }
 
+.btn {
+  display: inline-block;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  text-decoration: none;
+  font: inherit;
+}
+
+.btn-google {
+  background: var(--accent);
+  color: #fff;
+}
+
+.login-divider {
+  margin: 0.75rem 0;
+  font-size: 0.85rem;
+}
+
 .placeholder-card {
   background: var(--card-bg);
   border: 1px solid var(--border);
