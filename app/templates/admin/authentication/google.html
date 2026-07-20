@@ -1,0 +1,36 @@
+{% extends "admin/base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}Google OAuth · Admin · minigrc{% endblock %}
+{% block admin_content %}
+{{ page_header("Google OAuth", breadcrumbs=[("Admin", "/admin")]) }}
+<p class="lede">
+  Status:
+  {% if resolved.usable %}
+  <span class="badge text-bg-success">Active ({{ resolved.source }})</span>
+  {% else %}
+  <span class="badge text-bg-secondary">Not configured</span>
+  {% endif %}
+</p>
+<form method="post" action="/admin/authentication/google">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <div class="form-check mb-2">
+    <input class="form-check-input" type="checkbox" name="enabled" id="enabled" {% if row and row.enabled %}checked{% endif %}>
+    <label class="form-check-label" for="enabled">Enabled</label>
+  </div>
+  <label class="d-block mb-2">Client ID
+    <input type="text" name="client_id" value="{{ row.client_id if row else '' }}">
+  </label>
+  <label class="d-block mb-2">Client secret
+    <input type="password" name="client_secret" placeholder="{{ 'Configured — leave blank to keep' if has_secret else 'Not set' }}" autocomplete="new-password">
+  </label>
+  <label class="d-block mb-2">Allowed Workspace domains (comma-separated, blank = any verified Google account)
+    <input type="text" name="allowed_domains" value="{{ row.allowed_domains if row else '' }}">
+  </label>
+  <div class="form-check mb-2">
+    <input class="form-check-input" type="checkbox" name="auto_provision_enabled" id="auto_provision_enabled" {% if row and row.auto_provision_enabled %}checked{% endif %}>
+    <label class="form-check-label" for="auto_provision_enabled">Automatically create an account on first Google sign-in</label>
+  </div>
+  <p class="text-secondary small">When off, a first-time Google sign-in creates a <strong>pending</strong> account that an admin must approve under Admin &gt; Users before it can sign in.</p>
+  <button type="submit" class="btn btn-primary mt-2">Save</button>
+</form>
+{% endblock %}
