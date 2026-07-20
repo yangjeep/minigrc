@@ -70,7 +70,7 @@ def build_register_router(config: RegisterConfig) -> APIRouter:
     def serialize(row: Any) -> dict[str, Any]:
         data: dict[str, Any] = {"id": row.id, "updated_at": _iso(row.updated_at)}
         for spec in config.fields:
-            data[spec.name] = spec.compute(row) if spec.read_only else getattr(row, spec.name)
+            data[spec.name] = spec.compute(row) if spec.compute is not None else getattr(row, spec.name)
         return data
 
     @router.get("")
