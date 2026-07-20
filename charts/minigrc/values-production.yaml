@@ -1,0 +1,53 @@
+# Example production overrides. Merge with values.yaml:
+#   helm install minigrc ./charts/minigrc -f charts/minigrc/values-production.yaml \
+#     --set image.tag=<your-built-tag>
+#
+# Requires an externally-managed Secret (see values.yaml's externalSecret
+# comment) containing at minimum GRC_ENCRYPTION_KEY and DATABASE_URL
+# pointing at your managed Postgres instance — this chart never bundles
+# or manages a production database.
+
+web:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+worker:
+  replicaCount: 1 # increase once a real multi-worker workload justifies it
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+ingress:
+  enabled: true
+  className: "nginx"
+  host: "grc.example.com"
+  tls:
+    enabled: true
+    secretName: "minigrc-tls"
+
+config:
+  GRC_LOG_LEVEL: "INFO"
+  GRC_APP_ENV: "production"
+  GRC_SESSION_COOKIE_SECURE: "true"
+  GRC_PUBLIC_BASE_URL: "https://grc.example.com"
+
+externalSecret:
+  name: "minigrc-secrets" # must contain DATABASE_URL for your managed Postgres
+
+# With external Postgres and no local watched import directory, disable
+# the PVC entirely — every web/worker replica is then fully stateless.
+persistence:
+  enabled: false
+
+bundledPostgres:
+  enabled: false
