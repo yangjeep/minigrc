@@ -1,0 +1,27 @@
+{% extends "admin/base.html" %}
+{% from "_page_header.html" import page_header %}
+{% from "_states.html" import empty_state %}
+{% block title %}Connections · Admin · minigrc{% endblock %}
+{% block admin_content %}
+{{ page_header("Connections", breadcrumbs=[("Admin", "/admin")], action_label="Add connection", action_href="/connections/new") }}
+<p class="lede">Every configured integration in one place — database connections, AWS, and Google Drive.</p>
+{% if not cards %}
+{{ empty_state("No connections yet. Use \"Add connection\" to create one.", icon="plug") }}
+{% else %}
+<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3">
+  {% for card in cards %}
+  <div class="col">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title">{{ card.name }}</h5>
+        <p class="card-subtitle text-secondary mb-2">{{ card.connection_type }}</p>
+        <span class="badge text-bg-{{ card.status_class }}">{{ card.status_label }}</span>
+        <p class="card-text text-secondary small mt-2">{{ card.last_activity }}</p>
+        <a href="{{ card.detail_url }}" class="btn btn-sm btn-outline-secondary">View</a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
