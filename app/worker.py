@@ -28,6 +28,7 @@ _shutdown_requested = False
 
 def _register_handlers() -> None:
     import app.connections  # noqa: F401 - import registers the connection_test handler
+    import app.imports  # noqa: F401 - import registers the run_import handler
 
 
 def _handle_shutdown_signal(signum, frame) -> None:  # noqa: ANN001 - signal handler signature

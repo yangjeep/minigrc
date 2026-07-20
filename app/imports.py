@@ -17,6 +17,7 @@ import.
 
 from __future__ import annotations
 
+import base64
 import csv
 import dataclasses
 import datetime
@@ -31,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
 from app.csv_import import import_requirements_csv
+from app.jobs import claim_specific_job, enqueue_job, register_handler, run_job
 from app.models import RISK_STATUSES, Framework, ImportJob, Risk
 from app.uploads import UploadTooLargeError
 
@@ -278,10 +280,82 @@ def run_import(
     return job
 
 
+def _run_import_job_handler(session: Session, payload: dict[str, Any]) -> dict[str, Any]:
+    raw_bytes = base64.b64decode(payload["raw_bytes_b64"])
+    job = run_import(
+        session,
+        importer_name=payload["importer_name"],
+        raw_bytes=raw_bytes,
+        filename=payload["filename"],
+        target=payload["target"],
+        actor=payload["actor"],
+        source=payload["source"],
+    )
+    return {"import_job_id": job.id, "status": job.status}
+
+
+register_handler("run_import", _run_import_job_handler)
+
+
+def enqueue_and_run_import(
+    session: Session,
+    *,
+    importer_name: str,
+    raw_bytes: bytes,
+    filename: str,
+    target: dict[str, Any],
+    actor: str,
+    source: str,
+) -> ImportJob:
+    """Run an import through the Feature 7 job system (same synchronous-
+    inline pattern as the Feature 6 connection test): enqueue a job, claim
+    exactly that job, run it, then look up the resulting ImportJob row.
+    """
+    job = enqueue_job(
+        session,
+        job_type="run_import",
+        payload={
+            "importer_name": importer_name,
+            "raw_bytes_b64": base64.b64encode(raw_bytes).decode("ascii"),
+            "filename": filename,
+            "target": target,
+            "actor": actor,
+            "source": source,
+        },
+        actor=actor,
+    )
+    session.flush()
+    claimed = claim_specific_job(session, job.id, worker_id="inline")
+    if claimed is not None:
+        run_job(session, claimed, actor=actor)
+        session.flush()
+        job = claimed
+
+    if job.status == "succeeded" and job.result_json:
+        result = json.loads(job.result_json)
+        import_job = session.get(ImportJob, result["import_job_id"])
+        if import_job is not None:
+            return import_job
+
+    # Job-infrastructure failure (not a normal import rejection, which
+    # always returns an ImportJob above) — surface a minimal ImportJob-
+    # shaped record so callers have one consistent return type.
+    return ImportJob(
+        id="",
+        source=source,
+        importer_name=importer_name,
+        original_filename=filename,
+        status="rejected",
+        validation_errors_json=json.dumps([job.error_message or "Import job failed to run."]),
+        created_by=actor,
+    )
+
+
 __all__ = [
     "ImportResult",
     "UploadTooLargeError",
     "compute_checksum",
+    "enqueue_and_run_import",
     "neutralize_csv_formula",
     "register_importer",
     "run_import",
