@@ -10,6 +10,8 @@ import datetime
 import pytest
 
 from app.jobs import (
+    STALE_RUNNING_THRESHOLD_SECONDS,
+    _try_claim,
     claim_job,
     enqueue_job,
     process_next_job,
@@ -99,6 +101,39 @@ def test_run_job_success_marks_succeeded_with_result(app):
         assert job.status == "succeeded"
         assert job.result_json is not None
         assert "42" in job.result_json
+
+
+def test_try_claim_rejects_row_already_freshly_reclaimed_by_another_worker(app):
+    """Regression test for a TOCTOU race in the stale-running reclaim path.
+
+    Simulates two workers whose SELECT both saw job J as a stale-running
+    candidate before either claimed it: worker A's guarded UPDATE runs
+    first and refreshes `claimed_at` to "now"; worker B's guarded UPDATE
+    must then fail, because J is no longer stale by the time B's WHERE
+    clause re-evaluates against the current row. If the UPDATE's WHERE
+    clause doesn't repeat the staleness check (only `status='running'`),
+    B would incorrectly re-claim J and both workers would run its handler.
+    """
+    with app.state.session_factory() as session:
+        job = enqueue_job(session, job_type=TEST_JOB_TYPE, payload={}, actor="admin@example.com")
+        session.commit()
+        job_id = job.id
+
+    now = datetime.datetime.now(datetime.UTC)
+    stale_before = now - datetime.timedelta(seconds=STALE_RUNNING_THRESHOLD_SECONDS)
+
+    with app.state.session_factory() as session:
+        # Worker A already reclaimed this stale job moments ago.
+        row = session.get(Job, job_id)
+        row.status = "running"
+        row.claimed_by = "worker-a"
+        row.claimed_at = now
+        session.commit()
+
+    with app.state.session_factory() as session:
+        result = _try_claim(session, job_id, worker_id="worker-b", now=now, stale_before=stale_before)
+        session.commit()
+        assert result is None
 
 
 def test_run_job_failure_retries_until_max_attempts(app):
