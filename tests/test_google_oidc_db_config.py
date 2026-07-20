@@ -256,6 +256,19 @@ def test_login_page_shows_google_link_for_db_only_config(client, app):
     assert b"Sign in with Google" in response.content
 
 
+def test_login_page_presents_google_as_primary_not_local(client, app):
+    """UAT finding: when Google OAuth is configured and usable, it must be
+    the prominent/first path, not a small link below the local
+    email/password form — the local form is break-glass, not the ordinary
+    default (issue #7). See 2026-07-20 admin/OAuth/IAM/connections
+    consolidation worklog."""
+    _configure_db_google_oidc(app, auto_provision_enabled=True)
+
+    response = client.get("/login")
+    html = response.text
+    assert html.index("Sign in with Google") < html.index('name="email"')
+
+
 def test_admin_page_explains_missing_public_base_url(admin_client, app):
     """UAT finding: a fully filled-in form (enabled, client ID, secret)
     still shows 'Not configured' when GRC_PUBLIC_BASE_URL isn't set, with
