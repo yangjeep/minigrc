@@ -14,7 +14,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -120,6 +120,7 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
     app.include_router(dashboard.router)
     app.include_router(frameworks.router)
     app.include_router(controls.router)
+    app.include_router(controls.controls_register_router)
     app.include_router(policies.router)
     app.include_router(risks.router)
     app.include_router(people.router)
@@ -133,9 +134,11 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
     app.include_router(placeholders.router)
 
     @app.exception_handler(FastAPIHTTPException)
-    async def http_exception_handler(request: Request, exc: FastAPIHTTPException) -> HTMLResponse:
+    async def http_exception_handler(request: Request, exc: FastAPIHTTPException):
         if 300 <= exc.status_code < 400:
             return RedirectResponse(url=exc.headers.get("Location", "/"), status_code=exc.status_code)
+        if request.url.path.startswith("/api/"):
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
         return templates.TemplateResponse(
             request,
             "error.html",
