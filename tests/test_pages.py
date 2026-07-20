@@ -63,10 +63,21 @@ def test_risks_list_loads(logged_in_client):
     assert b"Risk Register" in response.content
 
 
-def test_audit_log_loads(logged_in_client):
-    response = logged_in_client.get("/audit-log")
+def test_audit_log_requires_admin(logged_in_client):
+    response = logged_in_client.get("/admin/audit-log")
+    assert response.status_code == 403
+
+
+def test_audit_log_loads_for_admin(admin_client):
+    response = admin_client.get("/admin/audit-log")
     assert response.status_code == 200
     assert b"Audit Log" in response.content
+
+
+def test_legacy_audit_log_path_redirects(admin_client):
+    response = admin_client.get("/audit-log", follow_redirects=False)
+    assert response.status_code == 308
+    assert response.headers["location"] == "/admin/audit-log"
 
 
 def test_people_list_loads(logged_in_client):
@@ -106,7 +117,7 @@ def test_health_does_not_require_auth(client):
 
 @pytest.mark.parametrize(
     "path",
-    ["/", "/frameworks", "/risks", "/policies", "/audit-log"],
+    ["/", "/frameworks", "/risks", "/policies"],
 )
 def test_pages_render_bootstrap_shell(logged_in_client, path):
     response = logged_in_client.get(path)
@@ -120,8 +131,12 @@ def test_pages_render_bootstrap_shell(logged_in_client, path):
     assert b"/static/vendor/bootstrap-5.3.3/bootstrap.bundle.min.js" in html
 
 
-def test_trust_center_admin_renders_bootstrap_shell(admin_client):
-    response = admin_client.get("/trust-center/admin")
+@pytest.mark.parametrize(
+    "path",
+    ["/trust-center/admin", "/admin", "/admin/users", "/admin/audit-log"],
+)
+def test_admin_pages_render_bootstrap_shell(admin_client, path):
+    response = admin_client.get(path)
     assert response.status_code == 200
     html = response.content
     assert b'id="sidebarOffcanvas"' in html

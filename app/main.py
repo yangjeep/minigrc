@@ -62,13 +62,13 @@ NAV_ITEMS = [
     ("Connectors", "/connectors"),
     ("Connections", "/connections"),
     ("Trust Center", "/trust-center/admin"),
-    ("Audit Log", "/audit-log"),
 ]
 
 # Populated as each Admin sub-area ships (Users, Connections, Authentication,
 # Jobs, Audit Log, Settings) — same (label, href) shape as NAV_ITEMS.
 ADMIN_NAV_ITEMS: list[tuple[str, str]] = [
     ("Users", "/admin/users"),
+    ("Audit Log", "/admin/audit-log"),
 ]
 
 CSRF_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
@@ -154,6 +154,7 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
     app.include_router(trust_center.sections_register_router)
     app.include_router(trust_center_public.router)
     app.include_router(audit_log.router)
+    app.include_router(audit_log.legacy_router)
     app.include_router(admin.router)
     app.include_router(admin_users.router)
     app.include_router(admin_users.users_register_router)
