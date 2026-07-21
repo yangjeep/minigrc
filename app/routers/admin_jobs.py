@@ -41,13 +41,13 @@ JOBS_REGISTER_CONFIG = RegisterConfig(
             name="available_at",
             type="text",
             read_only=True,
-            compute=lambda j: j.available_at.isoformat() if j.available_at else None,
+            compute=lambda j: j.available_at.strftime("%Y-%m-%d %H:%M UTC") if j.available_at else None,
         ),
         FieldSpec(
             name="claimed_at",
             type="text",
             read_only=True,
-            compute=lambda j: j.claimed_at.isoformat() if j.claimed_at else None,
+            compute=lambda j: j.claimed_at.strftime("%Y-%m-%d %H:%M UTC") if j.claimed_at else None,
         ),
         FieldSpec(
             name="error_message", type="text", read_only=True, compute=lambda j: _truncate(j.error_message)

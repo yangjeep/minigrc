@@ -19,7 +19,12 @@
     emptyMessage: "No jobs yet.",
     columns: [
       {title: "Type", field: "job_type", editor: false},
-      {title: "Status", field: "status", editor: false},
+      {title: "Status", field: "status", editor: false, formatter: function(cell) {
+        var span = document.createElement("span");
+        span.className = "badge badge-" + cell.getValue();
+        span.textContent = cell.getValue();
+        return span;
+      }},
       {title: "Attempts", field: "attempts", editor: false},
       {title: "Available", field: "available_at", editor: false},
       {title: "Claimed", field: "claimed_at", editor: false},
