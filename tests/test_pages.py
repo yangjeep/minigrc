@@ -24,6 +24,53 @@ def test_dashboard_loads(logged_in_client):
     assert b"Dashboard" in response.content
 
 
+def test_dashboard_hides_audit_activity_from_non_admin(logged_in_client, app):
+    """UAT finding: the Dashboard's 'Recent audit activity' widget queried
+    and displayed the 10 most recent AuditEvent rows to ANY logged-in
+    user, unfiltered — including admin-sensitive entries this PR now
+    writes there (user role/status changes, Google OAuth secret
+    creation), directly undermining the PR's own stated "Audit Log moved
+    to admin-only" tightening. See 2026-07-20 admin/OAuth/IAM/connections
+    consolidation worklog."""
+    from app.audit import record_audit_event
+
+    with app.state.session_factory() as session:
+        record_audit_event(
+            session,
+            entity_type="google_oidc_settings",
+            entity_id="x",
+            action="update",
+            detail="Set enabled=True auto_provision_enabled=True allowed_domains=''",
+            actor="admin@example.com",
+        )
+        session.commit()
+
+    response = logged_in_client.get("/")
+    assert response.status_code == 200
+    assert b"Recent audit activity" not in response.content
+    assert b"google_oidc_settings" not in response.content
+
+
+def test_dashboard_shows_audit_activity_to_admin(admin_client, app):
+    from app.audit import record_audit_event
+
+    with app.state.session_factory() as session:
+        record_audit_event(
+            session,
+            entity_type="google_oidc_settings",
+            entity_id="x",
+            action="update",
+            detail="Set enabled=True",
+            actor="admin@example.com",
+        )
+        session.commit()
+
+    response = admin_client.get("/")
+    assert response.status_code == 200
+    assert b"Recent audit activity" in response.content
+    assert b"google_oidc_settings" in response.content
+
+
 def test_frameworks_list_shows_seeded_framework(logged_in_client):
     response = logged_in_client.get("/frameworks")
     assert response.status_code == 200

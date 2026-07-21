@@ -7,14 +7,14 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.deps import get_db, require_login
-from app.models import AuditEvent, Framework, Policy, RequirementNote, Risk
+from app.models import AuditEvent, Framework, Policy, RequirementNote, Risk, User
 from app.progress import compute_progress
 
 router = APIRouter(dependencies=[Depends(require_login)])
 
 
 @router.get("/")
-def dashboard(request: Request, db: Session = Depends(get_db)):
+def dashboard(request: Request, db: Session = Depends(get_db), user: User = Depends(require_login)):
     frameworks = db.scalars(select(Framework).where(Framework.is_active.is_(True))).all()
     progress_list = [compute_progress(f) for f in frameworks]
     incomplete_requirements = sum(p.applicable - p.implemented for p in progress_list)
@@ -51,9 +51,15 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     recent_notes = db.scalars(
         select(RequirementNote).order_by(RequirementNote.created_at.desc()).limit(5)
     ).all()
-    recent_audit_events = db.scalars(
-        select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(10)
-    ).all()
+    # Audit history is admin-only (see app/routers/audit_log.py) — the
+    # dashboard's own summary widget must not leak the same admin-sensitive
+    # entries (user role/status changes, OAuth secret creation, etc.) to
+    # every logged-in user just because it queries AuditEvent directly.
+    recent_audit_events = (
+        db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(10)).all()
+        if user.role == "admin"
+        else []
+    )
 
     templates = request.app.state.templates
     return templates.TemplateResponse(
