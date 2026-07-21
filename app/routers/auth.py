@@ -77,6 +77,9 @@ def login_submit(
         logger.info("login failed for %s", normalized)
         return redirect_with_flash("/login", "Invalid email or password.", kind="error")
 
+    if user.status == "pending":
+        logger.info("login rejected for %s: status=pending", normalized)
+        return redirect_with_flash("/login", "Your account is awaiting administrator approval.", kind="error")
     if user.status != "active":
         logger.info("login rejected for %s: status=%s", normalized, user.status)
         return redirect_with_flash(

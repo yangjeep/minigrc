@@ -223,6 +223,44 @@ def test_changed_email_updates_user_matched_by_subject(app, client):
         assert len(events) == 1
 
 
+def test_subject_matched_email_change_colliding_with_another_user_rejected(app, client):
+    _configure_db_google_oidc(app, auto_provision_enabled=True)
+    with app.state.session_factory() as session:
+        session.add(
+            User(
+                email="renaming-user@example.com",
+                password_hash="",
+                status="active",
+                google_subject="renaming-subject",
+            )
+        )
+        session.add(
+            User(
+                email="already-taken@example.com",
+                password_hash="",
+                status="active",
+            )
+        )
+        session.commit()
+
+    state, nonce = _start_login(client)
+    claims = {
+        "iss": "https://accounts.google.com",
+        "sub": "renaming-subject",
+        "email": "already-taken@example.com",
+        "email_verified": True,
+        "nonce": nonce,
+    }
+    response = _do_callback(client, state, claims)
+    assert response.status_code == 303
+    assert "flash_kind=error" in response.headers["location"]
+    assert "session" not in response.cookies
+
+    with app.state.session_factory() as session:
+        renaming_user = session.scalar(select(User).where(User.google_subject == "renaming-subject"))
+        assert renaming_user.email == "renaming-user@example.com"
+
+
 def test_broken_encryption_key_falls_back_to_not_configured(app, client):
     _configure_db_google_oidc(app, auto_provision_enabled=True)
     app.state.settings.encryption_key = Fernet.generate_key().decode()  # wrong key now
@@ -335,3 +373,30 @@ def test_saving_with_blank_secret_keeps_existing_secret(admin_client, app):
     with app.state.session_factory() as session:
         row = session.scalar(select(GoogleOidcSettings).order_by(GoogleOidcSettings.updated_at.desc()))
         assert row.secret_id == original_secret_id
+
+
+def test_rotating_client_secret_twice_does_not_crash(admin_client, app):
+    from tests.conftest import extract_csrf_token
+
+    app.state.settings.encryption_key = TEST_KEY
+
+    def _save(secret_value):
+        page = admin_client.get("/admin/authentication/google")
+        csrf_token = extract_csrf_token(page.text)
+        return admin_client.post(
+            "/admin/authentication/google",
+            data={
+                "enabled": "on",
+                "client_id": "test-client-id",
+                "client_secret": secret_value,
+                "allowed_domains": "",
+                "csrf_token": csrf_token,
+            },
+            follow_redirects=False,
+        )
+
+    first = _save("first-secret-value")
+    assert first.status_code == 303
+
+    second = _save("second-secret-value")
+    assert second.status_code == 303

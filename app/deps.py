@@ -59,6 +59,8 @@ def require_login(request: Request, db: Session = Depends(get_db)) -> User:
     user = db.get(User, user_session.user_id)
     if user is None:
         raise _redirect_to_login()
+    if user.status == "pending":
+        raise _redirect_to_login("Your account is awaiting administrator approval.")
     if user.status != "active":
         raise _redirect_to_login("Your account is no longer active. Contact an administrator.")
 
