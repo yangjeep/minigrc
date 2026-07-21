@@ -21,7 +21,12 @@
       {title: "Email", field: "email", editor: false, formatter: "link",
        formatterParams: {url: function(cell) { return "/admin/users/" + cell.getData().id + "/edit"; }}},
       {title: "Role", field: "role", editor: false},
-      {title: "Status", field: "status", editor: false},
+      {title: "Status", field: "status", editor: false, formatter: function(cell) {
+        var span = document.createElement("span");
+        span.className = "badge badge-" + cell.getValue();
+        span.textContent = cell.getValue();
+        return span;
+      }},
       {title: "Google-linked", field: "google_linked", editor: false, formatter: "tickCross"},
       {title: "Created", field: "created_at", editor: false}
     ]
