@@ -87,7 +87,9 @@
 
 <h2>Where things live</h2>
 <ul>
-  <li><a href="/frameworks">Frameworks</a>, <a href="/controls">Controls</a>, <a href="/policies">Policies</a>, <a href="/risks">Risks</a>, <a href="/admin/audit-log">Audit Log</a>, <a href="/admin/connections">Connections</a> — implemented.</li>
+  <li>
+    <a href="/frameworks">Frameworks</a>, <a href="/controls">Controls</a>, <a href="/policies">Policies</a>, <a href="/risks">Risks</a>{% if request.state.user is defined and request.state.user and request.state.user.role == "admin" %}, <a href="/admin/audit-log">Audit Log</a>, <a href="/admin/connections">Connections</a>{% endif %} — implemented.
+  </li>
   <li><a href="/evidence">Evidence</a>, <a href="/actions">Actions</a>, <a href="/trust-center">Trust Center</a> — placeholders, see each page for status.</li>
 </ul>
 {% endblock %}

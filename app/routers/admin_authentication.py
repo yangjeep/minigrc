@@ -18,7 +18,7 @@ from app.audit import record_audit_event
 from app.deps import get_db, require_admin, verify_csrf
 from app.flash import redirect_with_flash
 from app.google_oidc_config import resolve_google_oidc_config
-from app.models import GoogleOidcSettings, User
+from app.models import GoogleOidcSettings, User, new_id
 from app.secrets import create_encrypted_secret
 
 router = APIRouter(prefix="/admin/authentication", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -85,7 +85,11 @@ def update_google_settings(
     if client_secret.strip():
         key = request.app.state.settings.encryption_key
         secret = create_encrypted_secret(
-            db, name="google_oidc_client_secret", plaintext=client_secret.strip(), actor=admin.email, key=key
+            db,
+            name=f"google_oidc_client_secret:{new_id()}",
+            plaintext=client_secret.strip(),
+            actor=admin.email,
+            key=key,
         )
         secret_id = secret.id
 

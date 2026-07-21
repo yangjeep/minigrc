@@ -3,7 +3,7 @@
 {% block title %}Users · Admin · minigrc{% endblock %}
 {% block admin_content %}
 {{ page_header("Users", breadcrumbs=[("Admin", "/admin")], action_label="Add user", action_href="/admin/users/new") }}
-<p class="lede">Local accounts and their role/status. Google sign-in links to a user by email.</p>
+<p class="lede">Local accounts and their role/status. Google sign-in matches by Google account first, falling back to email for first-time linking.</p>
 <div id="users-grid"></div>
 {% endblock %}
 

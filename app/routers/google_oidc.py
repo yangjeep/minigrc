@@ -94,6 +94,10 @@ def _resolve_user(
     user = db.scalar(select(User).where(User.google_subject == identity.subject))
     if user is not None:
         if user.email != normalized_email:
+            email_owner = db.scalar(select(User).where(User.email == normalized_email))
+            if email_owner is not None and email_owner.id != user.id:
+                logger.info("google oidc email-change collision for %s", normalized_email)
+                return None, COLLISION_MESSAGE
             old_email = user.email
             user.email = normalized_email
             db.flush()
