@@ -8,6 +8,7 @@ layer only. Each card links to its type's existing detail/edit page.
 from __future__ import annotations
 
 import dataclasses
+import datetime
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
@@ -19,6 +20,12 @@ from app.models import AwsConnection, ExternalConnection, GoogleDriveConnection
 
 router = APIRouter(prefix="/admin/connections", tags=["admin"], dependencies=[Depends(require_admin)])
 legacy_router = APIRouter()
+
+
+def _format_timestamp(value: datetime.datetime | None, *, never_label: str) -> str:
+    if value is None:
+        return never_label
+    return value.strftime("%Y-%m-%d %H:%M UTC")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -43,7 +50,7 @@ def _external_connection_cards(db: Session) -> list[ConnectionCard]:
                 connection_type=label,
                 status_label=row.last_test_status,
                 status_class=status_class,
-                last_activity=row.last_tested_at.isoformat() if row.last_tested_at else "Never tested",
+                last_activity=_format_timestamp(row.last_tested_at, never_label="Never tested"),
                 detail_url=f"/connections/{row.id}/edit",
             )
         )
@@ -60,7 +67,7 @@ def _aws_connection_card(db: Session) -> ConnectionCard | None:
         connection_type="AWS account",
         status_label=row.last_error_summary or ("Healthy" if row.last_check_at else "Not yet checked"),
         status_class=status_class,
-        last_activity=row.last_check_at.isoformat() if row.last_check_at else "Never checked",
+        last_activity=_format_timestamp(row.last_check_at, never_label="Never checked"),
         detail_url="/connectors/aws",
     )
 
@@ -74,7 +81,7 @@ def _google_drive_connection_card(db: Session) -> ConnectionCard | None:
     )
     if row is None:
         return None
-    last_sync = row.last_successful_sync_at.isoformat() if row.last_successful_sync_at else "Never synced"
+    last_sync = _format_timestamp(row.last_successful_sync_at, never_label="Never synced")
     return ConnectionCard(
         name="Google Drive",
         connection_type="Google Drive (OAuth)",
