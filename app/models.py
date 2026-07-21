@@ -446,6 +446,7 @@ class User(Base):
     google_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
     person: Mapped[Person | None] = relationship()
 
