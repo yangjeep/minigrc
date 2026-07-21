@@ -18,6 +18,20 @@ def test_users_list_shows_existing_users(admin_client, test_user):
     assert TEST_EMAIL in response.text
 
 
+def test_users_register_api_list_returns_users(admin_client, test_user):
+    """UAT finding: the Users list page (test_users_list_shows_existing_users)
+    returns 200 regardless of whether its client-side register-grid table can
+    actually load data — the real data source is this JSON endpoint, which
+    500'd in the browser because User had no updated_at column while
+    app/registers/router.py::serialize unconditionally reads row.updated_at
+    (every other registered model has it). See 2026-07-20
+    admin/OAuth/IAM/connections consolidation worklog."""
+    response = admin_client.get("/api/registers/admin_users")
+    assert response.status_code == 200
+    emails = {row["email"] for row in response.json()}
+    assert TEST_EMAIL in emails
+
+
 def test_users_register_api_edit_requires_admin(logged_in_client, test_user):
     headers = {"X-CSRF-Token": logged_in_client.cookies.get("csrf_token")}
     response = logged_in_client.patch(
