@@ -26,6 +26,31 @@ def test_connections_index_lists_external_connection(admin_client, app):
     assert b"Warehouse" in response.content
 
 
+def test_connections_index_formats_last_activity_timestamp(admin_client, app):
+    """UAT finding: the index card showed a raw isoformat() timestamp with
+    microseconds ('2026-07-21T00:20:10.063910') instead of the humanized
+    '%Y-%m-%d %H:%M UTC' format used everywhere else in the app (e.g. the
+    connection edit page's own 'Last test' line). See 2026-07-20
+    admin/OAuth/IAM/connections consolidation worklog."""
+    tested_at = datetime.datetime(2026, 7, 21, 0, 20, 10, 63910)
+    with app.state.session_factory() as session:
+        session.add(
+            ExternalConnection(
+                name="Warehouse",
+                db_type="postgres",
+                created_by="admin@example.com",
+                last_test_status="success",
+                last_tested_at=tested_at,
+            )
+        )
+        session.commit()
+
+    response = admin_client.get("/admin/connections")
+    assert response.status_code == 200
+    assert b"2026-07-21 00:20 UTC" in response.content
+    assert b"2026-07-21T00:20:10.063910" not in response.content
+
+
 def test_connections_index_lists_aws_connection(admin_client, app, admin_user):
     with app.state.session_factory() as session:
         session.add(AwsConnection(account_label="Prod AWS", configured_by_user_id=admin_user.id))
