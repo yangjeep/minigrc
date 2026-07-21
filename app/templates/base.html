@@ -32,9 +32,11 @@
         <nav aria-label="Primary">
           <ul class="nav nav-pills flex-column">
             {% for label, href in nav_items %}
+            {% if href != '/trust-center/admin' or (request.state.user is defined and request.state.user and request.state.user.role == "admin") %}
             <li class="nav-item">
               <a class="nav-link{% if request.url.path == href %} active{% endif %}" href="{{ href }}" {% if request.url.path == href %}aria-current="page"{% endif %}>{{ label }}</a>
             </li>
+            {% endif %}
             {% endfor %}
             {% if request.state.user is defined and request.state.user and request.state.user.role == "admin" %}
             <li class="nav-item">

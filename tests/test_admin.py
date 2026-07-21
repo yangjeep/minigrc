@@ -124,6 +124,22 @@ def test_admin_nav_link_hidden_from_regular_users(logged_in_client):
     assert 'href="/admin"' not in response.text
 
 
+def test_trust_center_admin_nav_link_hidden_from_regular_users(logged_in_client):
+    """UAT finding: the "Trust Center" nav item (NAV_ITEMS, app/main.py)
+    points at /trust-center/admin, which is require_admin-gated
+    (app/routers/trust_center.py) — but unlike the "Admin" link right next
+    to it, it was shown to every logged-in user regardless of role,
+    dead-ending in a 403 for non-admins. See 2026-07-20
+    admin/OAuth/IAM/connections consolidation worklog."""
+    response = logged_in_client.get("/")
+    assert 'href="/trust-center/admin"' not in response.text
+
+
+def test_trust_center_admin_nav_link_shown_to_admins(admin_client):
+    response = admin_client.get("/")
+    assert 'href="/trust-center/admin"' in response.text
+
+
 def test_admin_nav_link_shown_to_admins(admin_client):
     response = admin_client.get("/")
     assert 'href="/admin"' in response.text
