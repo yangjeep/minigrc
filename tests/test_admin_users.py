@@ -18,6 +18,19 @@ def test_users_list_shows_existing_users(admin_client, test_user):
     assert TEST_EMAIL in response.text
 
 
+def test_users_list_status_column_uses_badge_styling(admin_client, test_user):
+    """No JS test harness in this repo, so this can't render Tabulator and
+    assert on the DOM — smallest reasonable guard against silently dropping
+    the badge formatter that makes Status consistent with every other status
+    column in the app (evidence/policies/controls/risks/people/vendors all
+    render `badge badge-{status}`, Users' Tabulator column plain text
+    escaped that convention). See 2026-07-20 admin/OAuth/IAM/connections
+    consolidation worklog."""
+    response = admin_client.get("/admin/users")
+    assert response.status_code == 200
+    assert "badge badge-" in response.text
+
+
 def test_users_register_api_list_returns_users(admin_client, test_user):
     """UAT finding: the Users list page (test_users_list_shows_existing_users)
     returns 200 regardless of whether its client-side register-grid table can
