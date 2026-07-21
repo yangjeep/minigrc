@@ -66,6 +66,7 @@
   </tbody>
 </table>
 
+{% if request.state.user.role == "admin" %}
 <h2>Recent audit activity</h2>
 <table>
   <thead><tr><th>When (UTC)</th><th>Entity</th><th>Action</th><th>Detail</th></tr></thead>
@@ -82,6 +83,7 @@
     {% endfor %}
   </tbody>
 </table>
+{% endif %}
 
 <h2>Where things live</h2>
 <ul>
