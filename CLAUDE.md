@@ -7,6 +7,7 @@ Read these imports before non-trivial work:
 - @.agent/README.md
 - @.agent/RULES.md
 - @.agent/LOOP.md
+- @.agent/TESTING.md
 - @docs/product/minigrc-mvp-prd.md
 
 Then read the GitHub issue/design for the specific task and inspect the current repository state before editing.
@@ -56,7 +57,7 @@ Use the repository's current PostgreSQL test/migration path whenever a change af
 7. **AI is advisory/drafting only.** It may observe, prioritize, nag, and pre-fill; it may not autonomously approve, attest, pass tests, accept risk, close findings, or fabricate evidence.
 8. **One deployment = one organization for MVP.** Do not add SaaS multi-tenancy/org switching unless explicitly approved later.
 9. **Schema changes go through Alembic** and must preserve supported SQLite/PostgreSQL semantics.
-10. **Every change must preserve authorization, historical integrity, idempotency/replay behavior, secret handling, and migration safety.**
+10. **Every change must preserve authorization, historical integrity, idempotency/replay behavior, secret handling, migration safety, and the applicable testing/UAT gates in `.agent/TESTING.md`.**
 
 See `.agent/RULES.md` for the complete rules.
 
@@ -72,23 +73,28 @@ See `.agent/RULES.md` for the complete rules.
 
 Before writing code:
 
-1. Read the imported agent files and PRD.
+1. Read the imported agent files, testing contract, and PRD.
 2. Read the target issue and parent/dependency issues.
 3. Inspect current code/schema/migrations/tests/docs/recent merged work.
 4. Verify assumptions against repository reality.
 5. Produce/update a design first when the issue is architecture-sensitive or explicitly requires one.
+6. Identify which test layers apply: unit, regression, integration, browser/E2E, Claude Desktop UAT.
 
 After writing code:
 
-1. Run targeted tests.
-2. Run full relevant tests.
-3. Run `ruff check . && ruff format --check .`.
-4. Run relevant SQLite/PostgreSQL migration/compatibility checks for persistence changes.
-5. Run relevant security/dependency/secret checks available in the repo.
-6. Perform the adversarial review in `.agent/LOOP.md`.
-7. Update required docs/worklog.
-8. Commit logically, push the task branch, and create/update a draft PR unless the task contract says otherwise.
-9. Do not merge without explicit authorization.
+1. Run targeted unit/regression tests.
+2. Run full relevant regression suite.
+3. Run applicable integration/backend tests.
+4. Run `ruff check . && ruff format --check .`.
+5. Run relevant SQLite/PostgreSQL migration/compatibility checks for persistence changes.
+6. Run relevant security/dependency/secret checks available in the repo.
+7. Exercise representative browser/E2E user flows for user-visible changes.
+8. Perform the adversarial review in `.agent/LOOP.md`.
+9. Prepare/execute the Claude Desktop UAT runbook required by `.agent/TESTING.md` when the feature is user-visible and ready for acceptance.
+10. Any defect follows the regression-first bug-fix loop in `.agent/TESTING.md`; rerun affected integration/UAT scenarios after the fix.
+11. Update required docs/worklog.
+12. Commit logically, push the task branch, and create/update a draft PR unless the task contract says otherwise.
+13. Do not merge without explicit authorization.
 
 ## Current layout
 
@@ -97,7 +103,7 @@ app/                  FastAPI application/domain/persistence code
 migrations/           Alembic migrations
 tests/                automated tests
 docs/                 product, architecture, design, decisions, worklogs
-.agent/                coding-agent execution contract
+.agent/                coding-agent execution, testing, and UAT contract
 CLAUDE.md              concise project-memory entrypoint
 ```
 
@@ -108,11 +114,17 @@ Do not rely on this abbreviated layout instead of inspecting the repository; it 
 A task is not complete until:
 
 - required acceptance criteria are implemented;
-- relevant automated tests cover the new behavior;
+- applicable unit tests cover new/changed logic;
+- every bug fix has regression coverage unless an explicit documented exception is unavoidable;
+- full relevant regression tests pass;
+- applicable integration tests pass, including both SQLite/PostgreSQL when backend-neutral persistence changed;
+- representative browser/E2E flows pass for user-visible changes;
+- Claude Desktop UAT is PASS for release-ready user-visible work, or explicitly PENDING and therefore not release-complete;
 - lint/format are clean;
 - migrations/backfills are reviewed and verified where applicable;
 - event/projection rebuild semantics are verified where applicable;
 - authorization/security/integrity risks have been reviewed;
+- UAT/test defects have completed the regression-first fix/retest workflow;
 - documentation/worklog is current;
 - no unrelated changes or secrets are in the diff;
-- commits are pushed and the draft PR accurately represents the work.
+- commits are pushed and the draft PR accurately reports unit, regression, integration, E2E, UAT, security, and bug-fix results separately.
