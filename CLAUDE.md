@@ -1,139 +1,118 @@
 # CLAUDE.md
 
-Execution contract for coding agents working in this repository. Read this
-file first, then `docs/architecture.md` and `docs/product-scope.md` before
-making non-trivial changes.
+Shared project instructions for Claude Code and other coding agents.
 
-## What this is
+Read these imports before non-trivial work:
 
-A lightweight, self-hosted ISMS/GRC tool for one organization operating one
-internal compliance program (frameworks, policies, risks, audit trail). It
-is **not** a Vanta/Drata/Wiz/Aikido competitor. See `docs/product-scope.md`
-for explicit non-goals — read it before adding a feature area.
+- @.agent/README.md
+- @.agent/RULES.md
+- @.agent/LOOP.md
+- @docs/product/minigrc-mvp-prd.md
+
+Then read the GitHub issue/design for the specific task and inspect the current repository state before editing.
+
+## What miniGRC is
+
+miniGRC is a lightweight, self-hostable compliance operating system. The MVP is SOC 2 Type II-first while preserving ISO 27001 compatibility through a framework-neutral control/evidence core.
+
+The product's primary question is:
+
+> How far are we from audit-ready compliance, what is blocking us, and what should happen next?
+
+Repository state is authoritative for what exists today. The PRD defines target product/architecture intent. GitHub issues define implementation slices. If they materially conflict, follow `.agent/LOOP.md` rather than silently choosing.
 
 ## Commands
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"       # install app + dev deps (pytest, ruff, httpx)
+pip install -e ".[dev]"
 
-python -m app.cli migrate                        # apply DB migrations
-python -m app.cli create-user --email you@example.com  # create your login
+python -m app.cli migrate
+python -m app.cli create-user --email you@example.com
 
-uvicorn app.main:app --reload # run dev server on http://127.0.0.1:8000
+uvicorn app.main:app --reload
 
-pytest                        # run all tests
-pytest tests/test_pages.py    # run a single test file
-pytest tests/test_pages.py::test_dashboard_loads  # run a single test
+pytest
+pytest tests/test_pages.py
+pytest tests/test_pages.py::test_dashboard_loads
 
-ruff check .                  # lint
-ruff format .                 # format
+ruff check .
+ruff format .
+ruff format --check .
 
-alembic revision --autogenerate -m "describe change"  # new migration
+alembic revision --autogenerate -m "describe change"
 ```
 
-## Hard constraints (non-negotiable)
+Use the repository's current PostgreSQL test/migration path whenever a change affects backend-neutral persistence or schema. Do not assume a SQLite-only test proves PostgreSQL semantics.
 
-1. **KISS over cleverness.** Boring monolith, one process, one SQLite file.
-   No microservices, queues, background workers, or Kubernetes for this
-   app's scale. If a constraint here blocks you, ask — don't route around it.
-2. **No generic abstractions without a second caller.** No generic
-   repository layer, no plugin/connector SDK, no requirement engine — until
-   a second concrete use forces it. A future connector starts as one plain
-   module (connection test + checks + evidence output), not a framework.
-3. **Single-tenant, no multi-tenancy.** One deployment = one organization.
-   No `org_id` column, no org switching, no RBAC beyond "logged in or not."
-4. **IDs are 32-character hex UUID4 strings, not autoincrement ints, and
-   not ULIDs** (see `app/models.py::new_id`) — they are not lexicographically
-   sortable; use `created_at` where creation order matters.
-5. **Every mutation that matters to an auditor writes an `AuditEvent`**
-   (via `app/audit.py::record_audit_event`) in the same session/transaction
-   as the mutation it describes.
-6. **Never present placeholder/sample content as official ISO text.** Seed
-   data and framework catalogues must be clearly labelled
-   (`is_placeholder_content`, docs, UI notice) — see `docs/domain/domain-model.md`
-   for the copyright boundary this observes. This app never claims to grant
-   ISO certification.
-7. **Schema changes go through Alembic**, not `Base.metadata.create_all`.
-   Every schema change needs a migration (`alembic revision --autogenerate`),
-   reviewed by hand before committing — see
-   `docs/decisions/architectural-decisions.md`.
-8. **Auth is local and simple**: session cookie + server-side session table,
-   Argon2 password hashing, CSRF on every state-changing form. No JWTs, no
-   hosted identity provider, no self-registration. See `app/security.py`,
-   `app/deps.py`, `app/routers/auth.py`.
-9. **All persistent data lives under `GRC_DATA_DIR`** (default `./data`):
-   `grc.db`, `policies/<id>/<version>/`, `tmp/`. Never write persistent
-   files anywhere else — see `app/storage.py`.
-10. **Importing `app.main` must never touch the real `./data` directory.**
-    The module-level `app` object is built lazily (see `app/main.py::__getattr__`)
-    specifically so `tests/conftest.py` importing `create_app` doesn't create
-    a real database. Tests must always pass an explicit `database_path`/
-    `data_dir` to `create_app`.
+## Non-negotiable architecture summary
+
+1. **Material compliance state is event-centric.** Immutable domain events are authoritative; canonical projections/read models are derived and rebuildable.
+2. **Exactly one relational backend per deployment:** SQLite or PostgreSQL. Mixed/dual-database runtime modes are unsupported.
+3. **PostgreSQL materialized views are disposable read optimization only**, never compliance truth.
+4. **Approved/effective compliance history is immutable.** Later changes create new versions/events.
+5. **File bytes belong in S3-compatible object storage; compliance meaning belongs in the DB/event model.** S3 versioning is not policy/control/evidence workflow versioning.
+6. **Connectors produce normalized facts/artifacts with provenance, not compliance conclusions**, and never write projection tables directly.
+7. **AI is advisory/drafting only.** It may observe, prioritize, nag, and pre-fill; it may not autonomously approve, attest, pass tests, accept risk, close findings, or fabricate evidence.
+8. **One deployment = one organization for MVP.** Do not add SaaS multi-tenancy/org switching unless explicitly approved later.
+9. **Schema changes go through Alembic** and must preserve supported SQLite/PostgreSQL semantics.
+10. **Every change must preserve authorization, historical integrity, idempotency/replay behavior, secret handling, and migration safety.**
+
+See `.agent/RULES.md` for the complete rules.
+
+## Auth and security baseline
+
+- Preserve secure server-side sessions and CSRF protection.
+- Local break-glass administration remains available while generic OIDC is optional/being introduced.
+- Authentication does not imply application authorization.
+- Never commit secrets, `.env` files, database files, uploaded evidence/policies, raw OAuth tokens, API keys, or provider credentials.
+- Never persist secrets in domain events, logs, exported audit packages, fixtures, or client-visible configuration readback.
 
 ## Execution order
 
-**Before writing code:**
-1. Read `docs/architecture.md` (layout, request flow, key decisions).
-2. Read `docs/product-scope.md` (what's in scope for this app vs. owned by
-   an external tool like Asana).
-3. Check `docs/domain/domain-model.md` if the change touches frameworks,
-   requirements, assessments, controls, mappings, or risks.
+Before writing code:
 
-**After writing code:**
-1. Run `pytest && ruff check . && ruff format --check .` — all must pass.
-2. If the schema changed, generate an Alembic migration and check it by hand.
-3. Add or update a worklog entry in `docs/worklog/YYYY-MM-DD-<slug>.md`
-   (see `docs/worklog/README.md` for the template).
-4. Commit with `<type>: <description>` (feat/fix/refactor/docs/test/chore).
+1. Read the imported agent files and PRD.
+2. Read the target issue and parent/dependency issues.
+3. Inspect current code/schema/migrations/tests/docs/recent merged work.
+4. Verify assumptions against repository reality.
+5. Produce/update a design first when the issue is architecture-sensitive or explicitly requires one.
+
+After writing code:
+
+1. Run targeted tests.
+2. Run full relevant tests.
+3. Run `ruff check . && ruff format --check .`.
+4. Run relevant SQLite/PostgreSQL migration/compatibility checks for persistence changes.
+5. Run relevant security/dependency/secret checks available in the repo.
+6. Perform the adversarial review in `.agent/LOOP.md`.
+7. Update required docs/worklog.
+8. Commit logically, push the task branch, and create/update a draft PR unless the task contract says otherwise.
+9. Do not merge without explicit authorization.
+
+## Current layout
+
+```text
+app/                  FastAPI application/domain/persistence code
+migrations/           Alembic migrations
+tests/                automated tests
+docs/                 product, architecture, design, decisions, worklogs
+.agent/                coding-agent execution contract
+CLAUDE.md              concise project-memory entrypoint
+```
+
+Do not rely on this abbreviated layout instead of inspecting the repository; it changes as the MVP evolves.
 
 ## Definition of done
 
 A task is not complete until:
-- [ ] Tests pass (`pytest`) and cover the new behavior.
-- [ ] Lint and format are clean (`ruff check .`, `ruff format --check .`).
-- [ ] A worklog entry exists describing what changed and why.
-- [ ] Docs (`docs/architecture.md`, `docs/product-scope.md`) are updated if
-      the change alters the schema, layout, or scope they describe.
-- [ ] No secrets, `.db` files, uploaded documents, or `.env` files are committed.
 
-## Layout
-
-```
-app/
-  main.py           # application factory, route wiring, middleware, error handlers
-  config.py         # env-var settings (GRC_ prefix)
-  db.py             # SQLAlchemy engine/session, init_db (runs Alembic)
-  models.py         # ORM models — the domain schema lives here
-  security.py       # password hashing, session tokens, CSRF tokens
-  deps.py           # require_login, verify_csrf, get_db
-  audit.py          # record_audit_event helper
-  storage.py        # policy upload validation + immutable on-disk storage
-  progress.py       # framework completion percentage
-  requirements.py   # add_requirement (requirement + assessment together)
-  csv_import.py     # framework requirement CSV import
-  cli.py            # `python -m app.cli migrate|create-user`
-  seed.py           # idempotent example dataset
-  routers/          # one module per nav area
-  templates/        # Jinja2, server-rendered
-  static/           # plain CSS, no build step
-migrations/         # Alembic environment + versions/
-tests/
-docs/
-  architecture.md
-  product-scope.md
-  domain/domain-model.md
-  decisions/architectural-decisions.md
-  worklog/
-```
-
-## File roles
-
-| Path | Role |
-|------|------|
-| `CLAUDE.md` (this file) | Binding execution contract — read first |
-| `docs/architecture.md` | How requests flow through the app; key structural decisions |
-| `docs/product-scope.md` | What's in scope now, what's a placeholder, what's owned externally |
-| `docs/domain/domain-model.md` | ISO 27001 domain research and the copyright boundary it observes |
-| `docs/decisions/architectural-decisions.md` | Why (Alembic, auth design, SQLite, etc.) |
-| `docs/worklog/` | Append-only audit trail of changes, one file per unit of work |
+- required acceptance criteria are implemented;
+- relevant automated tests cover the new behavior;
+- lint/format are clean;
+- migrations/backfills are reviewed and verified where applicable;
+- event/projection rebuild semantics are verified where applicable;
+- authorization/security/integrity risks have been reviewed;
+- documentation/worklog is current;
+- no unrelated changes or secrets are in the diff;
+- commits are pushed and the draft PR accurately represents the work.
