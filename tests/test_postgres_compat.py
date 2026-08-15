@@ -9,12 +9,15 @@ docs/decisions/architectural-decisions.md.
 
 from __future__ import annotations
 
+import datetime
 import os
 
 import pytest
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import IntegrityError
 
 from app.db import build_engine, init_db, make_session_factory
+from app.events import DomainEvent
 from app.models import (
     ExternalConnection,
     GoogleOidcSettings,
@@ -40,6 +43,7 @@ PIVOT_TABLES = (
     "trust_center_settings",
     "trust_center_sections",
     "google_oidc_settings",
+    "domain_events",
 )
 
 
@@ -112,7 +116,19 @@ def test_migrations_apply_cleanly_against_postgres():
             settings_row = TrustCenterSettings()
             section = TrustCenterSection(title="PG Test Section")
             oidc_settings = GoogleOidcSettings(updated_by="pg-test")
-            session.add_all([secret, connection, job, import_job, settings_row, section, oidc_settings])
+            now = datetime.datetime.now(datetime.UTC)
+            domain_event = DomainEvent(
+                aggregate_type="pg_test_widget",
+                aggregate_id="pgtest0000000000000000000000000",
+                aggregate_sequence=1,
+                event_type="WidgetCreated",
+                payload_json='{"name": "pg-test"}',
+                occurred_at=now,
+                recorded_at=now,
+            )
+            session.add_all(
+                [secret, connection, job, import_job, settings_row, section, oidc_settings, domain_event]
+            )
             session.commit()
 
             assert session.query(Secret).filter_by(name="pg-secret").one().kind == "env_ref"
@@ -122,6 +138,10 @@ def test_migrations_apply_cleanly_against_postgres():
                 == "internal"
             )
             assert session.query(GoogleOidcSettings).filter_by(updated_by="pg-test").one().enabled is False
+            assert (
+                session.query(DomainEvent).filter_by(aggregate_type="pg_test_widget").one().aggregate_sequence
+                == 1
+            )
 
             with pytest.raises(Exception):  # noqa: B017 - dialect-specific IntegrityError subclass
                 session.add(TrustCenterSection(title="Bad visibility", visibility="not-a-real-value"))
@@ -130,6 +150,41 @@ def test_migrations_apply_cleanly_against_postgres():
 
             with pytest.raises(Exception):  # noqa: B017 - dialect-specific IntegrityError subclass
                 session.add(User(email="pg-bad-status@example.com", password_hash="x", status="not-a-status"))
+                session.commit()
+            session.rollback()
+
+            # DomainEvent's own constraints are new to this issue, so — unlike
+            # the two dialect-specific-subclass cases above — assert the
+            # portable sqlalchemy.exc.IntegrityError specifically, since
+            # SQLAlchemy wraps both the sqlite3- and psycopg-raised
+            # CHECK/UNIQUE violations under that same base class.
+            with pytest.raises(IntegrityError):
+                session.add(
+                    DomainEvent(
+                        aggregate_type="pg_test_widget",
+                        aggregate_id="pgtestbad000000000000000000000",
+                        aggregate_sequence=0,
+                        event_type="WidgetCreated",
+                        payload_json="{}",
+                        occurred_at=now,
+                        recorded_at=now,
+                    )
+                )
+                session.commit()
+            session.rollback()
+
+            with pytest.raises(IntegrityError):
+                session.add(
+                    DomainEvent(
+                        aggregate_type="pg_test_widget",
+                        aggregate_id="pgtest0000000000000000000000000",
+                        aggregate_sequence=1,
+                        event_type="WidgetDuplicateSequence",
+                        payload_json="{}",
+                        occurred_at=now,
+                        recorded_at=now,
+                    )
+                )
                 session.commit()
             session.rollback()
     finally:

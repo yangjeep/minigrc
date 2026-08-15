@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.config import get_settings
+from app.config import get_settings, reject_ambiguous_database_config
 from app.db import build_engine, init_db, make_session_factory, session_scope
 from app.logging_config import configure_logging
 from app.routers import (
@@ -98,7 +98,9 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
             }
         )
 
+    reject_ambiguous_database_config(settings)
     engine = build_engine(settings.resolved_engine_target)
+    logger.info("database backend: %s", engine.url.get_backend_name())
     init_db(engine)
     session_factory = make_session_factory(engine)
 

@@ -21,6 +21,7 @@ def test_init_db_creates_expected_tables(tmp_path):
         "policy_versions",
         "requirement_assessments",
         "requirement_notes",
+        "domain_events",
     }.issubset(tables)
 
 
