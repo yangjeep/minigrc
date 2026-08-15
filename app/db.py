@@ -63,11 +63,38 @@ def build_engine(database_path_or_url: str) -> Engine:
     return engine
 
 
+def _escape_for_configparser(value: str) -> str:
+    """Escape a value for Config.set_main_option.
+
+    Config stores values through Python's configparser, whose default
+    BasicInterpolation treats a bare "%" as the start of interpolation
+    syntax (e.g. "%(foo)s") and raises ValueError on any other "%" — which
+    a URL-encoded password (e.g. "%40" for "@") is guaranteed to contain,
+    and which an ordinary filesystem path could coincidentally contain
+    too. "%%" is configparser's own escape for a literal "%", and it
+    correctly decodes back to a single "%" on get_main_option/get_section
+    (verified against both read paths, including Alembic's own env.py,
+    across a wide range of special-character values), so this round-trips
+    exactly. Apply to every value passed to set_main_option, not only the
+    ones you expect to contain "%".
+    """
+    return value.replace("%", "%%")
+
+
 def init_db(engine: Engine) -> None:
     """Bring the database schema up to the latest Alembic revision."""
     alembic_cfg = Config(str(PROJECT_ROOT / "alembic.ini"))
-    alembic_cfg.set_main_option("script_location", str(PROJECT_ROOT / "migrations"))
-    alembic_cfg.set_main_option("sqlalchemy.url", str(engine.url))
+    alembic_cfg.set_main_option("script_location", _escape_for_configparser(str(PROJECT_ROOT / "migrations")))
+    # engine.url's default str()/repr() masks the password as "***" (issue
+    # #40) — fine for logs/diagnostics, but Alembic reparses this exact
+    # string into its own connection engine (migrations/env.py), so a
+    # masked value here makes password-authenticated PostgreSQL migrations
+    # fail. render_as_string(hide_password=False) round-trips the real
+    # credential, including URL-encoded special characters, through
+    # sqlalchemy.engine.url.make_url(); see app/cli.py for the
+    # hide_password=True counterpart used for actual display output.
+    real_url = engine.url.render_as_string(hide_password=False)
+    alembic_cfg.set_main_option("sqlalchemy.url", _escape_for_configparser(real_url))
     command.upgrade(alembic_cfg, "head")
 
 
