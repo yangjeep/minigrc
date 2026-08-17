@@ -186,6 +186,14 @@ def build_register_router(config: RegisterConfig) -> APIRouter:
                 actor=user.email,
             )
             db.delete(row)
+            try:
+                db.flush()
+            except IntegrityError:
+                db.rollback()
+                raise HTTPException(
+                    status_code=422,
+                    detail={"__all__": ["cannot delete: other records still reference this row"]},
+                ) from None
 
     if config.bulk_enabled:
 
