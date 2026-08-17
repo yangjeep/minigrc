@@ -132,6 +132,29 @@ conflict-admin-UI/authorization-change scope that design also covers.
   invariant (silently stripped under `python -O`, inconsistent with every
   other invariant guard in this codebase). Replaced with `RuntimeError`.
 
+## Bug found in CI (post-push)
+
+**Symptom:** PR #54's `test` CI job failed — `alembic.util.exc.CommandError:
+Path doesn't exist: /home/yangjeep/orca/workspaces/minigrc/epic/migrations`
+— while the full suite had passed locally (513/513) immediately before
+pushing, and `test-postgres`/`docker` both passed on the same commit.
+
+**Root cause:** `tests/test_framework_catalog_migration.py` hardcoded
+`PROJECT_ROOT = "/home/yangjeep/orca/workspaces/minigrc/epic"` — this
+session's own sandbox path. It happened to be correct in every local run
+(same sandbox), so nothing caught it before CI, whose checkout lives at a
+different path.
+
+**Fix:** `PROJECT_ROOT = Path(__file__).resolve().parent.parent`, matching
+`app/db.py`'s own existing convention for the same value, instead of a
+literal string. Grepped the full diff for any other `/home/yangjeep`
+occurrence — none found.
+
+**Verification:** reran `tests/test_framework_catalog_migration.py`
+locally (5/5 pass) and `ruff check`/`format --check` (clean) after the
+fix; pushed as a follow-up commit. CI result on the new commit to be
+confirmed.
+
 ## Known Gaps / Follow-ups
 
 - PostgreSQL verification for this issue's schema/reconciliation has not
