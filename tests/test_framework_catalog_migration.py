@@ -14,6 +14,7 @@ docs/superpowers/specs/2026-08-17-issue12-soc2-primary-framework-design.md
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 import pytest
 from alembic import command
@@ -21,7 +22,10 @@ from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 
-PROJECT_ROOT = "/home/yangjeep/orca/workspaces/minigrc/epic"
+# Resolved relative to this file, not hardcoded — matches app/db.py's own
+# PROJECT_ROOT convention. A hardcoded absolute path here would only work
+# in whichever sandbox wrote it and fail in CI's checkout path.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 _LEGACY_ISO_NAME = "ISO/IEC 27001:2022 Annex A (sample catalogue)"
 _LEGACY_ISO_VERSION = "2022"
