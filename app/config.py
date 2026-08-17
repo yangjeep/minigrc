@@ -14,8 +14,11 @@ class Settings(BaseSettings):
     data_dir: str = "./data"
     database_path: str | None = None
     # Standard unprefixed DATABASE_URL (not GRC_DATABASE_URL) — matches the
-    # convention most Postgres-hosting platforms use. When set, this takes
-    # priority over database_path/data_dir (see resolved_database_path).
+    # convention most Postgres-hosting platforms use. `resolved_engine_target`
+    # prefers this when set, but `reject_ambiguous_database_config` below
+    # treats both being set at once as a startup error rather than silently
+    # picking one — see that function for why the check isn't a validator
+    # here.
     database_url: str = Field(default="", validation_alias="DATABASE_URL")
     log_level: str = "INFO"
     app_env: str = "development"
@@ -95,3 +98,33 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def reject_ambiguous_database_config(settings: Settings) -> None:
+    """Raise if `settings` selects more than one relational backend (issue #22).
+
+    This is a plain function called explicitly at the point
+    `resolved_engine_target` is actually used (`app.main.create_app`), not a
+    pydantic validator on `Settings` construction. `get_settings()` builds a
+    real `Settings()` from the ambient environment on every call site,
+    including inside `create_app` *before* its test-only `database_path`
+    override (which always clears `database_url`) is applied — validating
+    at construction time would reject an ambient environment that has both
+    variables set even when the caller is about to override one of them.
+    Checking only the final, actually-used settings avoids that false
+    positive while still closing the real gap: an operator who sets both
+    `DATABASE_URL` and `GRC_DATABASE_PATH` for a real deployment now fails
+    fast with a clear message instead of `resolved_engine_target` silently
+    preferring `DATABASE_URL`.
+
+    A plain `RuntimeError` also avoids pydantic's `ValidationError`
+    formatting, which embeds a (partially truncated) repr of the input
+    dict — for `Settings` that would risk echoing tail characters of
+    `encryption_key` into a startup error message/log.
+    """
+    if settings.database_url and settings.database_path:
+        raise RuntimeError(
+            "Ambiguous database configuration: both DATABASE_URL and "
+            "GRC_DATABASE_PATH are set. A miniGRC deployment must select "
+            "exactly one relational backend — unset one of them."
+        )

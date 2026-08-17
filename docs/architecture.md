@@ -109,7 +109,10 @@ SQLite file (GRC_DATA_DIR/grc.db)   Policy files (GRC_DATA_DIR/policies/<id>/<ve
   An explicit `database_path`/`data_dir` passed to `create_app` (always
   the case in tests, per CLAUDE.md constraint #10) overrides
   `DATABASE_URL`, so tests are never accidentally pointed at a real
-  Postgres target.
+  Postgres target. A real deployment that sets both `DATABASE_URL` and
+  `GRC_DATABASE_PATH` at once fails fast at startup instead of silently
+  preferring one — see `app/config.py::reject_ambiguous_database_config`,
+  called from `create_app` right after settings are resolved.
 - Model column types are all portable SQLAlchemy types (`String`, `Text`,
   `DateTime`, `CheckConstraint`) with no SQLite-specific raw SQL outside
   `build_engine`'s pragma listener, and migrations already use
@@ -124,6 +127,29 @@ SQLite file (GRC_DATA_DIR/grc.db)   Policy files (GRC_DATA_DIR/policies/<id>/<ve
   `test-postgres` job (a `postgres:16` service container) that applies
   migrations and does a round-trip write/read against a live Postgres —
   see `.github/workflows/ci.yml` and `tests/test_postgres_compat.py`.
+
+### Domain events (event-centric persistence foundation)
+
+- `app/events.py::DomainEvent` (`domain_events` table) is a generic,
+  immutable append-only event store — the foundation issue #21/#22
+  requires before compliance domains (starting with #11, control
+  operations) can represent material facts as authoritative events rather
+  than mutable rows plus a descriptive `AuditEvent` row.
+- `append_event`/`append_and_project` append one event per call, assigning
+  a monotonic `aggregate_sequence` per `(aggregate_type, aggregate_id)`,
+  with an optional caller-supplied `idempotency_key` for retry-safe command
+  handling. `rebuild_projection` replays a caller-supplied `projectors`
+  dict against all of an aggregate type's events, in real append order
+  (`recorded_at` first — `aggregate_id` is a random UUID4 hex, not
+  sortable), to deterministically reconstruct a read model.
+  `DomainEvent` rows cannot be updated or deleted through any ORM path
+  (per-instance or bulk).
+- This module defines no event types, aggregate types, or projection
+  tables of its own — it's pure infrastructure. No existing domain
+  (`InternalControl`, `Policy`, `Risk`, etc.) has been migrated onto it
+  yet; they remain on the existing mutable-row-plus-`AuditEvent` pattern
+  until a domain issue (starting with #11) deliberately migrates it. See
+  `docs/superpowers/specs/2026-08-15-issue22-event-store-design.md`.
 
 ## Authentication
 
