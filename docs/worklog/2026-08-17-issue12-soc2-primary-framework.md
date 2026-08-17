@@ -152,8 +152,10 @@ occurrence — none found.
 
 **Verification:** reran `tests/test_framework_catalog_migration.py`
 locally (5/5 pass) and `ruff check`/`format --check` (clean) after the
-fix; pushed as a follow-up commit. CI result on the new commit to be
-confirmed.
+fix; pushed as a follow-up commit. CI on the new commit (eab2a1d): all
+four checks green (docker, test, test-postgres, GitGuardian) — confirms
+both the path fix and the Postgres-specific reconciliation/backfill
+coverage added for #12.
 
 ## Known Gaps / Follow-ups
 
