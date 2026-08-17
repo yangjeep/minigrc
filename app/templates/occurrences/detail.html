@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Occurrence · {{ occurrence.control.name }} · minigrc{% endblock %}
+{% block content %}
+<p><a href="/controls/{{ occurrence.control_id }}">&larr; {{ occurrence.control.name }}</a></p>
+<h1>Occurrence</h1>
+<p>
+  <strong>Due:</strong> {{ occurrence.due_at or "—" }} &middot;
+  <strong>Origin:</strong> {{ occurrence.origin }}
+  {% if occurrence.control_period_id %}
+  &middot; <strong>Period:</strong>
+  <a href="/control-periods/{{ occurrence.control_period_id }}">{{ occurrence.control_period.name }}</a>
+  {% endif %}
+</p>
+<p>
+  <strong>Currently recorded as:</strong>
+  {% if occurrence.performed_at %}
+  performed on {{ occurrence.performed_at }} by {{ occurrence.performed_by.display_name if occurrence.performed_by else "—" }}
+  {% else %}
+  not yet performed
+  {% endif %}
+</p>
+
+<h2>Record performance</h2>
+<form method="post" action="/occurrences/{{ occurrence.id }}/perform">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Performed on <input type="date" name="performed_on" value="{{ performed_on_default }}" max="{{ today }}" required></label>
+  <label>Performed by
+    <select name="performed_by_person_id">
+      <option value="">— unspecified —</option>
+      {% for person in people %}
+      <option value="{{ person.id }}" {% if occurrence.performed_by_person_id == person.id %}selected{% endif %}>
+        {{ person.display_name }} ({{ person.email }})
+      </option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Scope note <input type="text" name="scope_note" maxlength="500" value="{{ occurrence.scope_note }}"></label>
+  <label>Evidence note <input type="text" name="evidence_note" maxlength="500" value="{{ occurrence.evidence_note }}"></label>
+  {% if available_evidence %}
+  <label>Link evidence (optional)
+    <select name="evidence_snapshot_id">
+      <option value="">— none —</option>
+      {% for snapshot in available_evidence %}
+      <option value="{{ snapshot.id }}">{{ snapshot.title }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  <button type="submit">Save</button>
+</form>
+{% endblock %}

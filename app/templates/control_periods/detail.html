@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ period.name }} · minigrc{% endblock %}
+{% block content %}
+<p><a href="/control-periods">&larr; Control Periods</a></p>
+<h1>{{ period.name }}</h1>
+<p>
+  <strong>Window:</strong> {{ period.starts_on }} to {{ period.ends_on }} &middot;
+  <strong>Status:</strong> <span class="badge badge-{{ period.status }}">{{ period.status }}</span>
+  {% if period.closed_at %}&middot; <strong>Closed:</strong> {{ period.closed_at }}{% endif %}
+</p>
+
+{% if request.state.user.role == "admin" %}
+<p>
+  {% if period.status == "planned" %}
+  <form method="post" action="/control-periods/{{ period.id }}/activate" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <button type="submit">Activate</button>
+  </form>
+  {% elif period.status == "active" %}
+  <form method="post" action="/control-periods/{{ period.id }}/generate-occurrences" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <button type="submit">Generate occurrences for all calendar-cadence controls</button>
+  </form>
+  <form method="post" action="/control-periods/{{ period.id }}/close" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <button type="submit">Close period</button>
+  </form>
+  {% endif %}
+</p>
+{% endif %}
+
+<h2>Occurrences in this period</h2>
+<table>
+  <thead>
+    <tr><th>Control</th><th>Due</th><th>Performed</th><th>Origin</th></tr>
+  </thead>
+  <tbody>
+    {% for occurrence in occurrences %}
+    <tr>
+      <td><a href="/controls/{{ occurrence.control_id }}">{{ occurrence.control.name }}</a></td>
+      <td>{{ occurrence.due_at or "—" }}</td>
+      <td>{{ occurrence.performed_at or "Not yet performed" }}</td>
+      <td>{{ occurrence.origin }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">No occurrences yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -145,10 +145,10 @@ SQLite file (GRC_DATA_DIR/grc.db)   Policy files (GRC_DATA_DIR/policies/<id>/<ve
   `DomainEvent` rows cannot be updated or deleted through any ORM path
   (per-instance or bulk).
 - This module defines no event types, aggregate types, or projection
-  tables of its own — it's pure infrastructure. No existing domain
-  (`InternalControl`, `Policy`, `Risk`, etc.) has been migrated onto it
-  yet; they remain on the existing mutable-row-plus-`AuditEvent` pattern
-  until a domain issue (starting with #11) deliberately migrates it. See
+  tables of its own — it's pure infrastructure. `InternalControl`,
+  `Policy`, `Risk`, etc. remain on the existing
+  mutable-row-plus-`AuditEvent` pattern; #11's `ControlOccurrence` (below)
+  is the first concrete domain built on `app/events.py`. See
   `docs/superpowers/specs/2026-08-15-issue22-event-store-design.md`.
 
 ## Authentication
@@ -290,6 +290,63 @@ SQLite file (GRC_DATA_DIR/grc.db)   Policy files (GRC_DATA_DIR/policies/<id>/<ve
   viewable by any authenticated user.
 - See ADRs #21/#22.
 
+## Control operations (issue #11)
+
+- `ControlPeriod` (`app/models.py`) stays a plain mutable row +
+  `record_audit_event`, the same pattern as every other structural
+  table — it has no event history of its own worth preserving.
+  `ControlOccurrence`/`ControlOccurrenceEvidence` are the first canonical
+  **projections** over `app/events.py`'s event store: never written to
+  directly, only ever derived from `"control_occurrence"`-aggregate
+  `DomainEvent` rows via `app/control_occurrences.py`'s projector
+  functions (`CONTROL_OCCURRENCE_PROJECTORS`). `rebuild_control_occurrence_projection`
+  proves the generic rebuild contract holds for a real domain, not just
+  `app/events.py`'s own infrastructure test.
+- Four event types on the `"control_occurrence"` aggregate:
+  `ControlOccurrenceMaterialized` (cadence-driven generation),
+  `ControlOccurrenceRecordedManually` (event-driven/ad hoc),
+  `ControlOccurrencePerformed` (a performance claim — re-submittable as a
+  correction; every claim stays in `DomainEvent` history even though the
+  projection only surfaces the latest), and `ControlOccurrenceEvidenceLinked`.
+  The claimed performance time is the event's own `occurred_at` (business
+  time, may be backdated but never future-dated), never duplicated into
+  the JSON payload — `recorded_at` (system time) plus the event's
+  immutable `actor_type`/`actor_id` are the tamper-evident anchors, not a
+  parallel `AuditEvent` row (occurrence mutations deliberately do not
+  write one — see the design doc §12.3 for why, and the known resulting
+  gap in `/admin/audit-log` and the Dashboard's recent-activity widget).
+- `app/control_occurrences.py::generate_occurrences` is idempotent per due
+  date via a deterministic `idempotency_key`
+  (`control_occurrence:materialize:{control_id}:{period_id}:{due_date}`),
+  not a pre-check-then-insert — race-safe by construction, reusing
+  `append_and_project`'s existing idempotent short-circuit rather than new
+  machinery. `ControlOccurrence`'s `UniqueConstraint("control_id",
+  "control_period_id", "due_at")` is defense-in-depth for that path; for
+  the period-less case it needs a companion partial unique index
+  (`uq_occurrence_control_due_no_period`, `WHERE control_period_id IS
+  NULL`) because standard SQL treats `NULL != NULL` for uniqueness on
+  both SQLite and PostgreSQL.
+- Authorization follows the existing `require_login`/`require_admin`
+  split by *scope*, not a new tier: structural/cross-control/period-wide
+  actions (create/close a `ControlPeriod`, bulk-generate across every
+  control) are `require_admin`, the same category as connection config
+  and "run checks now"; individual single-control record-keeping
+  (self-serve rolling generation for one control, recording your own
+  occurrence, `/occurrences/{id}/perform`) stays `require_login`.
+- `InternalControl.cadence_type`/`cadence_interval_months` are ordinary
+  `CONTROLS_REGISTER_CONFIG` fields (Feature 2's register grid,
+  `app/routers/controls.py`) — the same edit mechanism as `status`/
+  `owner`/`review_frequency`. `owner_person_id` is a real person FK (the
+  value snapshotted onto each generated occurrence's
+  `responsible_person_id`), so it gets its own small form/route
+  (`POST /controls/{id}/owner`) rather than a register-grid field — the
+  grid's `FieldSpec` has no person-picker type, matching
+  `app/routers/vendor_systems.py::link_roster_row`'s existing pattern for
+  the same class of field.
+- See `docs/superpowers/specs/2026-08-15-issue11-control-operations-lifecycle-design.md`
+  for the full design, its reconciliation against #22, and §13 for the
+  post-implementation adversarial review findings/fixes.
+
 ## Testing
 
 - `tests/conftest.py` builds a fresh `FastAPI` app per test via
@@ -315,3 +372,9 @@ SQLite file (GRC_DATA_DIR/grc.db)   Policy files (GRC_DATA_DIR/policies/<id>/<ve
   Directory sync, and the AWS connector + Evidence respectively. External
   calls (Google, AWS) are always mocked/stubbed — see each file's use of
   `unittest.mock.patch` or `botocore.stub.Stubber`.
+- `tests/test_control_occurrences.py`, `tests/test_control_periods.py`,
+  `tests/test_occurrences.py` cover #11's schema/constraints (including
+  the NULL-uniqueness partial index), generation/projector/rebuild
+  behavior, and the structural (`/control-periods`) vs. operational
+  (`/controls/{id}/occurrences*`, `/occurrences/{id}`) routes
+  respectively.
