@@ -207,6 +207,51 @@ def test_any_logged_in_user_can_create_and_edit(logged_in_client):
     assert response.status_code == 200
 
 
+def test_patch_sets_cadence_fields(logged_in_client):
+    """Regression guard, issue #11 adversarial review finding: cadence_type/
+    cadence_interval_months must be reachable through the running app, not
+    only settable via direct ORM construction in tests."""
+    row = _create_control(logged_in_client, name="Cadence control")
+    response = logged_in_client.patch(
+        f"{REGISTER_URL}/{row['id']}",
+        json={"fields": {"cadence_type": "calendar"}, "expected_updated_at": row["updated_at"]},
+        headers=_csrf_headers(logged_in_client),
+    )
+    assert response.status_code == 200, response.text
+    row = response.json()
+    response = logged_in_client.patch(
+        f"{REGISTER_URL}/{row['id']}",
+        json={"fields": {"cadence_interval_months": 3}, "expected_updated_at": row["updated_at"]},
+        headers=_csrf_headers(logged_in_client),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["cadence_interval_months"] == 3
+
+
+def test_patch_rejects_bad_cadence_type(logged_in_client):
+    row = _create_control(logged_in_client, name="Bad cadence type")
+    response = logged_in_client.patch(
+        f"{REGISTER_URL}/{row['id']}",
+        json={"fields": {"cadence_type": "hourly"}, "expected_updated_at": row["updated_at"]},
+        headers=_csrf_headers(logged_in_client),
+    )
+    assert response.status_code == 422
+
+
+def test_patch_rejects_non_positive_cadence_interval(logged_in_client):
+    """Regression guard: a non-positive cadence_interval_months would send
+    app/control_occurrences.py's due-date generation loop backward forever
+    (adversarial review finding, issue #11) — the DB CHECK constraint must
+    reject it as a clean 422, not a 500."""
+    row = _create_control(logged_in_client, name="Negative cadence interval", cadence_type="calendar")
+    response = logged_in_client.patch(
+        f"{REGISTER_URL}/{row['id']}",
+        json={"fields": {"cadence_interval_months": -1}, "expected_updated_at": row["updated_at"]},
+        headers=_csrf_headers(logged_in_client),
+    )
+    assert response.status_code == 422
+
+
 def test_create_writes_audit_event(logged_in_client, app):
     row = _create_control(logged_in_client, name="Audited control")
     with app.state.session_factory() as session:

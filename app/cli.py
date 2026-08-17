@@ -22,10 +22,11 @@ from app.aws_connector import (
     check_iam,
 )
 from app.config import get_settings
+from app.control_occurrences import generate_occurrences
 from app.crypto import DecryptionError, EncryptionNotConfiguredError, decrypt
 from app.db import build_engine, init_db, make_session_factory, session_scope
 from app.imports import run_import
-from app.models import AwsConnection, User
+from app.models import AwsConnection, ControlPeriod, InternalControl, User
 from app.security import hash_password, normalize_email
 
 MIN_PASSWORD_LENGTH = 8
@@ -158,6 +159,50 @@ def aws_run_checks() -> int:
     return 0
 
 
+def generate_control_occurrences_command(control_id: str | None, period_id: str | None) -> int:
+    """Materialize expected occurrences for one calendar-cadence control
+    (or, if control_id is omitted, every calendar-cadence control),
+    optionally scoped to one control period. Idempotent — safe to run
+    repeatedly (e.g. from cron later; this command adds no scheduling
+    infrastructure itself, matching aws_run_checks's precedent)."""
+    settings = get_settings()
+    engine = build_engine(settings.resolved_engine_target)
+    init_db(engine)
+    session_factory = make_session_factory(engine)
+
+    with session_scope(session_factory) as session:
+        period = None
+        if period_id:
+            period = session.get(ControlPeriod, period_id)
+            if period is None:
+                print(f"error: no control period with id '{period_id}'", file=sys.stderr)
+                return 1
+
+        if control_id:
+            control = session.get(InternalControl, control_id)
+            if control is None:
+                print(f"error: no control with id '{control_id}'", file=sys.stderr)
+                return 1
+            controls = [control]
+        else:
+            controls = session.scalars(
+                select(InternalControl).where(InternalControl.cadence_type == "calendar")
+            ).all()
+
+        try:
+            total = 0
+            for control in controls:
+                occurrences = generate_occurrences(session, control, period=period, actor_type="system")
+                total += len(occurrences)
+                print(f"{control.name}: {len(occurrences)} occurrence(s)")
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
+    print(f"Generated/confirmed {total} occurrence(s) total.")
+    return 0
+
+
 def import_csv_command(importer_name: str, file_path: str, framework_id: str | None) -> int:
     settings = get_settings()
     engine = build_engine(settings.resolved_engine_target)
@@ -232,6 +277,19 @@ def main(argv: list[str] | None = None) -> int:
         "aws-run-checks", help="Run AWS CloudTrail/IAM evidence checks against the configured connection"
     )
 
+    generate_occurrences_parser = subparsers.add_parser(
+        "generate-control-occurrences",
+        help="Materialize expected occurrences for calendar-cadence controls",
+    )
+    generate_occurrences_parser.add_argument(
+        "--control-id", default=None, help="Limit to one control (default: every calendar-cadence control)"
+    )
+    generate_occurrences_parser.add_argument(
+        "--period-id",
+        default=None,
+        help="Generate against this control period (default: period-less rolling)",
+    )
+
     import_csv_parser = subparsers.add_parser(
         "import-csv", help="Import a CSV file through the native import subsystem"
     )
@@ -263,6 +321,8 @@ def main(argv: list[str] | None = None) -> int:
         return promote_admin(args.email)
     if args.command == "aws-run-checks":
         return aws_run_checks()
+    if args.command == "generate-control-occurrences":
+        return generate_control_occurrences_command(args.control_id, args.period_id)
     if args.command == "import-csv":
         return import_csv_command(args.importer, args.file, args.framework_id)
     if args.command == "import-directory":

@@ -36,6 +36,10 @@
       {title: "Review frequency", field: "review_frequency", editor: "list",
        editorParams: {values: {{ review_frequencies | list | tojson }}}},
       {title: "Description", field: "description", editor: "input"},
+      {title: "Cadence type", field: "cadence_type", editor: "list",
+       editorParams: {values: {{ cadence_types | list | tojson }}}},
+      {title: "Cadence (months)", field: "cadence_interval_months", editor: "number",
+       editorParams: {min: 1, step: 1}},
       {title: "Mapped requirements", field: "mapped_requirements", editor: false, hozAlign: "center"}
     ]
   });

@@ -147,7 +147,13 @@ def build_register_router(config: RegisterConfig) -> APIRouter:
             raise HTTPException(status_code=422, detail=errors)
         for key, value in fields.items():
             setattr(row, key, value)
-        db.flush()
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(
+                status_code=422, detail={"__all__": ["duplicate or constraint violation"]}
+            ) from None
         record_audit_event(
             db,
             entity_type=config.entity_type,

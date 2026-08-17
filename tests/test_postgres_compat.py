@@ -21,14 +21,17 @@ from sqlalchemy.exc import IntegrityError
 from app.db import build_engine, init_db, make_session_factory
 from app.events import DomainEvent
 from app.models import (
+    ControlOccurrence,
     ExternalConnection,
     GoogleOidcSettings,
     ImportJob,
+    InternalControl,
     Job,
     Secret,
     TrustCenterSection,
     TrustCenterSettings,
     User,
+    new_id,
 )
 
 POSTGRES_TEST_URL = os.environ.get("TEST_DATABASE_URL", "")
@@ -47,6 +50,11 @@ PIVOT_TABLES = (
     "google_oidc_settings",
     "domain_events",
 )
+
+# Issue #11's tables — added separately from PIVOT_TABLES because they also
+# need the partial-unique-index/CHECK-constraint behavior asserted below,
+# not just "table exists."
+ISSUE_11_TABLES = ("control_periods", "control_occurrences", "control_occurrence_evidence")
 
 
 def test_build_engine_defaults_to_sqlite_for_bare_path(tmp_path):
@@ -149,6 +157,7 @@ def test_migrations_apply_cleanly_against_postgres():
             tables
         )
         assert set(PIVOT_TABLES).issubset(tables)
+        assert set(ISSUE_11_TABLES).issubset(tables)
 
         user_columns = {col["name"] for col in inspect(engine).get_columns("users")}
         assert {"status", "google_subject"}.issubset(user_columns)
@@ -251,6 +260,73 @@ def test_migrations_apply_cleanly_against_postgres():
                         occurred_at=now,
                         recorded_at=now,
                     )
+                )
+                session.commit()
+            session.rollback()
+
+            # Issue #11: the ControlOccurrence schema is the first to combine
+            # a nullable-column UniqueConstraint with a companion partial
+            # unique index (uq_occurrence_control_due_no_period) — the most
+            # dialect-sensitive piece of that migration, so it needs its own
+            # direct proof against a real Postgres server, not just "CREATE
+            # TABLE succeeded."
+            control = InternalControl(name="PG cadence control", cadence_type="calendar")
+            session.add(control)
+            session.commit()
+
+            due_at = datetime.datetime(2026, 3, 1, 23, 59, 59, tzinfo=datetime.UTC)
+            session.add(
+                ControlOccurrence(
+                    id=new_id(),
+                    control_id=control.id,
+                    origin="manual",
+                    due_at=due_at,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            session.commit()
+
+            # Two period-less (control_period_id IS NULL) occurrences sharing
+            # a due_at must collide — this is exactly the case the plain
+            # UniqueConstraint("control_id", "control_period_id", "due_at")
+            # can NOT catch on its own (NULL != NULL in both SQLite and
+            # Postgres), which is why the partial index exists.
+            with pytest.raises(IntegrityError):
+                session.add(
+                    ControlOccurrence(
+                        id=new_id(),
+                        control_id=control.id,
+                        origin="manual",
+                        due_at=due_at,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                session.commit()
+            session.rollback()
+
+            # Multiple due_at=NULL period-less occurrences (event-driven,
+            # nothing scheduled) must remain legal — the partial index must
+            # not accidentally over-restrict this case.
+            session.add_all(
+                [
+                    ControlOccurrence(
+                        id=new_id(), control_id=control.id, origin="manual", created_at=now, updated_at=now
+                    ),
+                    ControlOccurrence(
+                        id=new_id(), control_id=control.id, origin="manual", created_at=now, updated_at=now
+                    ),
+                ]
+            )
+            session.commit()
+
+            # ck_control_cadence_interval_positive must reject a non-positive
+            # interval on Postgres too (guards the unbounded-due-date-loop
+            # defect a negative interval would otherwise cause).
+            with pytest.raises(IntegrityError):
+                session.add(
+                    InternalControl(name="Bad cadence", cadence_type="calendar", cadence_interval_months=-1)
                 )
                 session.commit()
             session.rollback()

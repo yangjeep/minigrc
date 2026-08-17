@@ -9,6 +9,109 @@
   <strong>Status:</strong> <span class="badge badge-{{ control.status }}">{{ control.status }}</span> &middot;
   <strong>Review frequency:</strong> {{ control.review_frequency }}
 </p>
+<p>
+  <strong>Owner (person):</strong>
+  {{ control.owner_person.display_name if control.owner_person else "unassigned" }}
+</p>
+<form method="post" action="/controls/{{ control.id }}/owner">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Assign owner
+    <select name="owner_person_id">
+      <option value="">— unassigned —</option>
+      {% for person in people %}
+      <option value="{{ person.id }}" {% if control.owner_person_id == person.id %}selected{% endif %}>
+        {{ person.display_name }} ({{ person.email }})
+      </option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit">Save</button>
+</form>
+
+<h2>Occurrences</h2>
+
+{% if control.cadence_type == "calendar" and control.cadence_interval_months %}
+<form method="post" action="/controls/{{ control.id }}/occurrences/generate" style="display:inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit">Generate upcoming occurrences</button>
+</form>
+{% endif %}
+
+<h3>Overdue</h3>
+<table>
+  <thead><tr><th>Due</th><th>Origin</th><th>Period</th><th></th></tr></thead>
+  <tbody>
+    {% for occurrence in overdue_occurrences %}
+    <tr>
+      <td>{{ occurrence.due_at }}</td>
+      <td>{{ occurrence.origin }}</td>
+      <td>
+        {% if occurrence.control_period_id %}
+        <a href="/control-periods/{{ occurrence.control_period_id }}">{{ occurrence.control_period.name }}</a>
+        {% else %}—{% endif %}
+      </td>
+      <td><a href="/occurrences/{{ occurrence.id }}">Record performance</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">Nothing overdue.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h3>Upcoming</h3>
+<table>
+  <thead><tr><th>Due</th><th>Origin</th><th>Period</th><th></th></tr></thead>
+  <tbody>
+    {% for occurrence in upcoming_occurrences %}
+    <tr>
+      <td>{{ occurrence.due_at or "—" }}</td>
+      <td>{{ occurrence.origin }}</td>
+      <td>
+        {% if occurrence.control_period_id %}
+        <a href="/control-periods/{{ occurrence.control_period_id }}">{{ occurrence.control_period.name }}</a>
+        {% else %}—{% endif %}
+      </td>
+      <td><a href="/occurrences/{{ occurrence.id }}">Record performance</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">Nothing upcoming.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h3>Completed</h3>
+<table>
+  <thead><tr><th>Due</th><th>Performed</th><th>Performed by</th></tr></thead>
+  <tbody>
+    {% for occurrence in completed_occurrences %}
+    <tr>
+      <td>{{ occurrence.due_at or "—" }}</td>
+      <td><a href="/occurrences/{{ occurrence.id }}">{{ occurrence.performed_at }}</a></td>
+      <td>{{ occurrence.performed_by.display_name if occurrence.performed_by else "—" }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3">No completed occurrences yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h3>Record an occurrence manually</h3>
+<form method="post" action="/controls/{{ control.id }}/occurrences">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Due on (optional) <input type="date" name="due_on"></label>
+  {% if active_periods %}
+  <label>Control period (optional)
+    <select name="control_period_id">
+      <option value="">— none —</option>
+      {% for period in active_periods %}
+      <option value="{{ period.id }}">{{ period.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  <label>Scope note <input type="text" name="scope_note" maxlength="500"></label>
+  <button type="submit">Record occurrence</button>
+</form>
 
 <h2>Mapped requirements</h2>
 <table>
