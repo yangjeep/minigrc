@@ -10,10 +10,12 @@ docs/decisions/architectural-decisions.md.
 from __future__ import annotations
 
 import datetime
+import logging
 import os
 
 import pytest
 from sqlalchemy import inspect, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 
 from app.db import build_engine, init_db, make_session_factory
@@ -70,6 +72,71 @@ def test_sqlite_pragma_listener_not_attached_for_postgres_url():
     from app.db import _set_sqlite_pragmas
 
     assert not event.contains(engine, "connect", _set_sqlite_pragmas)
+
+
+def test_init_db_passes_real_password_to_alembic_not_masked(monkeypatch):
+    """Regression test for issue #40: engine.url's default str()/repr()
+    masks the password as "***", but Alembic reparses whatever string
+    init_db hands it into its own connection engine — a masked value there
+    made password-authenticated PostgreSQL migrations fail authentication
+    with the literal string "***". Intercepts what init_db actually passes
+    to Alembic (no live Postgres connection needed — command.upgrade is
+    replaced with a no-op that just captures the resolved config), so this
+    runs in the always-on SQLite test job, not only the Postgres-gated one.
+    """
+    captured: dict[str, str] = {}
+
+    def fake_upgrade(alembic_cfg, revision):
+        captured["url"] = alembic_cfg.get_main_option("sqlalchemy.url")
+
+    monkeypatch.setattr("app.db.command.upgrade", fake_upgrade)
+
+    special_password = "p@ss:w/rd!$complicated"
+    url = make_url("postgresql+psycopg://myuser@localhost:5432/mydb").set(password=special_password)
+    engine = build_engine(url.render_as_string(hide_password=False))
+    init_db(engine)
+
+    assert "url" in captured, "init_db did not call command.upgrade"
+    assert "***" not in captured["url"]
+    assert make_url(captured["url"]).password == special_password
+
+
+def test_init_db_does_not_leak_password_into_captured_logs(monkeypatch, caplog):
+    """Negative counterpart to the test above: proves the real password
+    passed to Alembic never ends up in application logs/diagnostics —
+    only the masked str()/repr() form (or nothing) should ever be logged.
+
+    Two gotchas this test must defeat, both surfaced by adversarial review:
+    - `render_as_string(hide_password=False)` percent-encodes special
+      characters, so a password containing them (e.g. "p@ss!") never
+      appears in its raw form anywhere a leak would actually happen —
+      only its *encoded* form does. A password made only of characters
+      that never get percent-encoded (matching the convention in
+      tests/test_credential_leakage.py's SECRET_MARKER) closes that gap:
+      raw and rendered forms are identical, so asserting on the raw
+      string is meaningful either way.
+    - `migrations/env.py`'s `fileConfig(disable_existing_loggers=True)`
+      permanently disables any logger not named in alembic.ini's
+      `[loggers]` section the first time a REAL (non-monkeypatched)
+      `init_db` runs anywhere in the test session (e.g. via the `app`
+      fixture used by nearly every other test file) — silently making a
+      caplog-based leak assertion inert for the rest of the run. Resetting
+      `.disabled` on this module's own logger before capturing defeats
+      that regardless of test execution order.
+    """
+    monkeypatch.setattr("app.db.command.upgrade", lambda alembic_cfg, revision: None)
+    logging.getLogger("app.db").disabled = False
+
+    secret_password = "super-secret-db-password-should-never-leak"
+    url = make_url("postgresql+psycopg://myuser@localhost:5432/mydb").set(password=secret_password)
+    real_url = url.render_as_string(hide_password=False)
+    engine = build_engine(real_url)
+    with caplog.at_level(logging.DEBUG):
+        init_db(engine)
+
+    logged_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert secret_password not in logged_text
+    assert real_url not in logged_text
 
 
 @pytest.mark.skipif(not POSTGRES_TEST_URL, reason="TEST_DATABASE_URL not set — no live Postgres available")
