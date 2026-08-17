@@ -66,7 +66,7 @@ requirements_register_router = build_register_router(REQUIREMENTS_REGISTER_CONFI
 
 @router.get("")
 def list_frameworks(request: Request, db: Session = Depends(get_db)):
-    frameworks = db.scalars(select(Framework).order_by(Framework.name)).all()
+    frameworks = db.scalars(select(Framework).order_by(Framework.is_primary.desc(), Framework.name)).all()
     progress_by_id = {f.id: compute_progress(f) for f in frameworks}
     templates = request.app.state.templates
     return templates.TemplateResponse(

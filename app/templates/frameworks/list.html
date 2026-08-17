@@ -11,7 +11,10 @@
     {% for framework in frameworks %}
     {% set progress = progress_by_id[framework.id] %}
     <tr>
-      <td><a href="/frameworks/{{ framework.id }}">{{ framework.name }}</a></td>
+      <td>
+        <a href="/frameworks/{{ framework.id }}">{{ framework.name }}</a>
+        {% if framework.is_primary %}<span class="badge badge-primary">Primary</span>{% endif %}
+      </td>
       <td>{{ framework.version }}</td>
       <td>{{ "Yes" if framework.is_active else "No" }}</td>
       <td>{{ framework.requirements|length }}</td>

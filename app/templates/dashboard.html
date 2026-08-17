@@ -34,7 +34,10 @@
   <tbody>
     {% for framework, progress in progress_list %}
     <tr>
-      <td><a href="/frameworks/{{ framework.id }}">{{ framework.name }}</a></td>
+      <td>
+        <a href="/frameworks/{{ framework.id }}">{{ framework.name }}</a>
+        {% if framework.is_primary %}<span class="badge badge-primary">Primary</span>{% endif %}
+      </td>
       <td>{{ (progress.percent ~ "%") if progress.percent is not none else "N/A" }}</td>
       <td>{{ progress.applicable }}</td>
       <td>{{ progress.implemented }}</td>

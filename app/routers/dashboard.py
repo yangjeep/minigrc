@@ -15,7 +15,11 @@ router = APIRouter(dependencies=[Depends(require_login)])
 
 @router.get("/")
 def dashboard(request: Request, db: Session = Depends(get_db), user: User = Depends(require_login)):
-    frameworks = db.scalars(select(Framework).where(Framework.is_active.is_(True))).all()
+    frameworks = db.scalars(
+        select(Framework)
+        .where(Framework.is_active.is_(True))
+        .order_by(Framework.is_primary.desc(), Framework.name)
+    ).all()
     progress_list = [compute_progress(f) for f in frameworks]
     incomplete_requirements = sum(p.applicable - p.implemented for p in progress_list)
 
