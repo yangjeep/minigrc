@@ -32,9 +32,12 @@ def test_app_startup_seeds_example_dataset(app):
 
     session_factory = app.state.session_factory
     with session_factory() as session:
+        # Issue #12: startup now reconciles two system framework catalogs
+        # (ISO 27001, SOC 2) unconditionally, in addition to the demo
+        # InternalControl/Risk dataset — see app/framework_catalog.py.
         frameworks = session.scalars(select(Framework)).all()
-        assert len(frameworks) == 1
-        assert frameworks[0].is_placeholder_content is True
+        assert len(frameworks) == 2
+        assert all(f.is_placeholder_content is True for f in frameworks)
 
         events = session.scalars(select(AuditEvent)).all()
         assert len(events) > 0
