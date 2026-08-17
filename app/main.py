@@ -20,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.config import get_settings, reject_ambiguous_database_config
 from app.db import build_engine, init_db, make_session_factory, session_scope
+from app.framework_catalog import reconcile_system_catalogs
 from app.logging_config import configure_logging
 from app.routers import (
     admin,
@@ -108,6 +109,7 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
     session_factory = make_session_factory(engine)
 
     with session_scope(session_factory) as session:
+        reconcile_system_catalogs(session)
         if seed_if_empty(session):
             logger.info("seeded example dataset")
 

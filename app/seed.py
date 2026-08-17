@@ -2,99 +2,65 @@
 
 Everything under `summary`/`description` here is placeholder content
 authored for this repository, NOT reproduced text from the ISO/IEC 27001
-standard. See docs/domain/domain-model.md for the research notes and the
-copyright boundary this observes. Seeding is idempotent: it only runs when
-the frameworks table is empty, so restarts don't duplicate data.
+standard or the AICPA Trust Services Criteria. See
+docs/domain/domain-model.md for the research notes and copyright boundary,
+and docs/superpowers/specs/2026-08-17-issue12-soc2-primary-framework-design.md
+for the SOC 2 placeholder's sourcing.
+
+The system framework catalogs (ISO 27001, SOC 2) are reconciled separately
+and unconditionally by app/framework_catalog.py::reconcile_system_catalogs,
+called before this function on every startup — this function only adds the
+*demo* InternalControl/Risk rows on top of whichever catalogs already
+exist, and is gated on an AuditEvent marker (immune to later deletion of
+the demo controls themselves, and to Framework no longer ever being empty
+now that catalog reconciliation always runs) rather than any business
+table's emptiness. See that design doc's §5.2/§5.3 for why.
 """
 
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
 from app.models import (
+    AuditEvent,
     ControlRequirementMapping,
     Framework,
     InternalControl,
     Risk,
 )
-from app.requirements import add_requirement
+
+_DEMO_SEED_MARKER = {"entity_type": "control", "action": "seed"}
 
 
 def seed_if_empty(session: Session) -> bool:
-    if session.query(Framework).first() is not None:
+    already_seeded = (
+        session.scalar(
+            select(AuditEvent).where(
+                AuditEvent.entity_type == _DEMO_SEED_MARKER["entity_type"],
+                AuditEvent.action == _DEMO_SEED_MARKER["action"],
+            )
+        )
+        is not None
+    )
+    if already_seeded:
         return False
 
-    framework = Framework(
-        name="ISO/IEC 27001:2022 Annex A (sample catalogue)",
-        version="2022",
-        description=(
-            "Placeholder catalogue for local development and demos. Reference codes "
-            "follow the public Annex A theme numbering, but titles and summaries below "
-            "are paraphrased placeholders written for this repository — not the "
-            "licensed normative text of the standard. Replace with your "
-            "organization's own licensed copy before relying on this for a real audit."
-        ),
-        is_placeholder_content=True,
-    )
-    session.add(framework)
-    session.flush()
-    record_audit_event(
-        session,
-        entity_type="framework",
-        entity_id=framework.id,
-        action="seed",
-        detail=f"Seeded sample framework '{framework.name}'",
-    )
-
-    requirement_specs = [
-        (
-            "A.5.1",
-            "Policies for information security",
-            "Top-level direction and topic-specific policies exist, are approved, and communicated.",
-        ),
-        (
-            "A.5.9",
-            "Inventory of information and assets",
-            "Assets associated with information and information processing are identified and inventoried.",
-        ),
-        (
-            "A.8.1",
-            "User endpoint devices",
-            "Information stored on, processed by, or accessible via endpoint devices is protected.",
-        ),
-        (
-            "A.8.8",
-            "Management of technical vulnerabilities",
-            "Information about technical vulnerabilities is obtained and exposure is evaluated.",
-        ),
-        (
-            "A.5.30",
-            "ICT readiness for business continuity",
-            "ICT readiness is planned, implemented, maintained, and tested against continuity objectives.",
-        ),
-    ]
-    requirements = []
-    for order, (reference_code, title, summary) in enumerate(requirement_specs):
-        requirement = add_requirement(
-            session,
-            framework,
-            reference_code=reference_code,
-            title=title,
-            summary=summary,
-            display_order=order,
+    # reconcile_system_catalogs (called before this function in
+    # app/main.py) is guaranteed to have already created both catalogs and
+    # their requirements — this only reads them, never creates a
+    # Framework/FrameworkRequirement row itself, avoiding the duplicate-ISO-
+    # framework bug an earlier draft of this design had.
+    iso_framework = session.scalar(select(Framework).where(Framework.catalog_key == "iso27001-2022-sample"))
+    soc2_framework = session.scalar(select(Framework).where(Framework.catalog_key == "soc2-2017-sample"))
+    if iso_framework is None or soc2_framework is None:
+        raise RuntimeError(
+            "seed_if_empty requires reconcile_system_catalogs to have run first in the same "
+            "session — call app/framework_catalog.py::reconcile_system_catalogs before this function"
         )
-        requirements.append(requirement)
-    session.flush()
-    record_audit_event(
-        session,
-        entity_type="framework",
-        entity_id=framework.id,
-        action="seed",
-        detail=f"Seeded {len(requirements)} sample requirements",
-    )
-
-    by_code = {r.reference_code: r for r in requirements}
+    iso_by_code = {r.reference_code: r for r in iso_framework.requirements}
+    soc2_by_code = {r.reference_code: r for r in soc2_framework.requirements}
 
     control_specs = [
         (
@@ -103,7 +69,7 @@ def seed_if_empty(session: Session) -> bool:
             "security-lead@example.com",
             "implemented",
             "annual",
-            ["A.5.1"],
+            [("iso", "A.5.1"), ("soc2", "CC1.1")],
         ),
         (
             "Asset inventory in Google Workspace + connector scans",
@@ -111,7 +77,7 @@ def seed_if_empty(session: Session) -> bool:
             "it-lead@example.com",
             "in_progress",
             "monthly",
-            ["A.5.9", "A.8.1"],
+            [("iso", "A.5.9"), ("iso", "A.8.1")],
         ),
         (
             "Vulnerability management (owned by Aikido)",
@@ -119,7 +85,7 @@ def seed_if_empty(session: Session) -> bool:
             "security-lead@example.com",
             "implemented",
             "quarterly",
-            ["A.8.8"],
+            [("iso", "A.8.8")],
         ),
         (
             "Business continuity test",
@@ -127,10 +93,10 @@ def seed_if_empty(session: Session) -> bool:
             "ops-lead@example.com",
             "not_started",
             "annual",
-            ["A.5.30"],
+            [("iso", "A.5.30")],
         ),
     ]
-    for name, description, owner, status, review_frequency, codes in control_specs:
+    for name, description, owner, status, review_frequency, mappings in control_specs:
         control = InternalControl(
             name=name,
             description=description,
@@ -140,14 +106,17 @@ def seed_if_empty(session: Session) -> bool:
         )
         session.add(control)
         session.flush()
-        for code in codes:
-            session.add(ControlRequirementMapping(control_id=control.id, requirement_id=by_code[code].id))
+        codes_by_id = {}
+        for framework_key, code in mappings:
+            requirement = (iso_by_code if framework_key == "iso" else soc2_by_code)[code]
+            session.add(ControlRequirementMapping(control_id=control.id, requirement_id=requirement.id))
+            codes_by_id[code] = requirement
         record_audit_event(
             session,
             entity_type="control",
             entity_id=control.id,
             action="seed",
-            detail=f"Seeded sample control '{control.name}' mapped to {', '.join(codes)}",
+            detail=f"Seeded sample control '{control.name}' mapped to {', '.join(codes_by_id)}",
         )
 
     risk_specs = [

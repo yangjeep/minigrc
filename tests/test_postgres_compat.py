@@ -14,15 +14,17 @@ import logging
 import os
 
 import pytest
-from sqlalchemy import inspect, text
+from sqlalchemy import func, inspect, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 
 from app.db import build_engine, init_db, make_session_factory
 from app.events import DomainEvent
+from app.framework_catalog import reconcile_system_catalogs
 from app.models import (
     ControlOccurrence,
     ExternalConnection,
+    Framework,
     GoogleOidcSettings,
     ImportJob,
     InternalControl,
@@ -161,6 +163,9 @@ def test_migrations_apply_cleanly_against_postgres():
 
         user_columns = {col["name"] for col in inspect(engine).get_columns("users")}
         assert {"status", "google_subject"}.issubset(user_columns)
+
+        framework_columns = {col["name"] for col in inspect(engine).get_columns("frameworks")}
+        assert {"catalog_key", "is_primary"}.issubset(framework_columns)
 
         with engine.begin() as conn:
             conn.execute(
@@ -328,6 +333,27 @@ def test_migrations_apply_cleanly_against_postgres():
                 session.add(
                     InternalControl(name="Bad cadence", cadence_type="calendar", cadence_interval_months=-1)
                 )
+                session.commit()
+            session.rollback()
+
+            # Issue #12: system framework catalog reconciliation must be
+            # idempotent and the catalog_key uniqueness constraint must
+            # hold on Postgres too.
+            reconcile_system_catalogs(session)
+            session.commit()
+            iso = session.scalar(select(Framework).where(Framework.catalog_key == "iso27001-2022-sample"))
+            soc2 = session.scalar(select(Framework).where(Framework.catalog_key == "soc2-2017-sample"))
+            assert iso is not None and soc2 is not None
+            assert len(iso.requirements) == 5
+            assert len(soc2.requirements) == 9
+
+            framework_count_before = session.scalar(select(func.count()).select_from(Framework))
+            reconcile_system_catalogs(session)
+            session.commit()
+            assert session.scalar(select(func.count()).select_from(Framework)) == framework_count_before
+
+            with pytest.raises(IntegrityError):
+                session.add(Framework(catalog_key="iso27001-2022-sample", name="Dup", version="x"))
                 session.commit()
             session.rollback()
     finally:
