@@ -20,7 +20,7 @@ from __future__ import annotations
 import datetime
 import uuid
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -96,6 +96,9 @@ class FrameworkRequirement(Base):
     )
 
 
+CADENCE_TYPES = ("calendar", "event_driven")
+
+
 class InternalControl(Base):
     """An internal control the organization actually operates.
 
@@ -106,6 +109,16 @@ class InternalControl(Base):
     """
 
     __tablename__ = "internal_controls"
+    __table_args__ = (
+        CheckConstraint(f"cadence_type IN {CADENCE_TYPES}", name="ck_control_cadence_type"),
+        # NULL passes (nothing configured yet); a non-positive interval
+        # would otherwise send app/control_occurrences.py's due-date loop
+        # backward forever (adversarial review finding, issue #11).
+        CheckConstraint(
+            "cadence_interval_months IS NULL OR cadence_interval_months > 0",
+            name="ck_control_cadence_interval_positive",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -116,9 +129,27 @@ class InternalControl(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
+    # Operational cadence tracking (issue #11) — all nullable so every
+    # existing control keeps its current "design/status only" behavior
+    # (cadence_type=NULL) unless an admin/owner explicitly opts it into
+    # occurrence tracking. `review_frequency` above is deliberately left
+    # untouched: it means "how often we re-review this control's written
+    # definition," a distinct concept from "how often it operates."
+    cadence_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    cadence_interval_months: Mapped[int | None] = mapped_column(nullable=True)
+    owner_person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
+
     mappings: Mapped[list[ControlRequirementMapping]] = relationship(
         back_populates="control", cascade="all, delete-orphan"
     )
+    # No cascade here, deliberately (unlike `mappings` above): occurrences
+    # are compliance history, not disposable child rows. Under
+    # PRAGMA foreign_keys=ON, deleting a control with occurrences is
+    # rejected (RESTRICT-like NO ACTION) rather than silently destroying
+    # that history — see docs/superpowers/specs/2026-08-15-issue11-
+    # control-operations-lifecycle-design.md §3.3.
+    occurrences: Mapped[list[ControlOccurrence]] = relationship(viewonly=True)
+    owner_person: Mapped[Person | None] = relationship(viewonly=True)
 
 
 CONTROL_STATUSES = ("not_started", "in_progress", "implemented", "needs_review")
@@ -143,6 +174,149 @@ class ControlRequirementMapping(Base):
 
     control: Mapped[InternalControl] = relationship(back_populates="mappings")
     requirement: Mapped[FrameworkRequirement] = relationship(back_populates="mappings")
+
+
+CONTROL_PERIOD_STATUSES = ("planned", "active", "closed")
+
+
+class ControlPeriod(Base):
+    """An optional, framework-neutral time window controls operate within
+    (e.g. "SOC 2 Type II — H1 2026").
+
+    Deliberately not named "AssessmentPeriod" (collides with
+    RequirementAssessment) or "AuditPeriod" (imports SOC2-specific
+    vocabulary an ISO-only deployment has no equivalent for). No FK to
+    Framework — periods are framework-neutral, matching the epic's
+    principle that frameworks map onto controls, not the other way round.
+
+    Optional infrastructure, not a mandatory gate: `generate_occurrences`
+    (app/control_occurrences.py) has a period-less rolling-generation path
+    that never requires one of these to exist. A plain mutable row plus
+    `record_audit_event` (not an event-backed aggregate, unlike
+    ControlOccurrence below) — this is scheduling metadata that gates
+    generation, not itself the material compliance fact; see
+    docs/superpowers/specs/2026-08-15-issue11-control-operations-
+    lifecycle-design.md §12.1 for the considered alternative.
+
+    `status` has enforced meaning: "planned" periods accept no occurrence
+    generation/association; "active" periods accept both; "closed"
+    periods reject further generation/association and (enforced at the
+    route layer, not here) become immutable on starts_on/ends_on, with
+    `closed_at` recording the transition separately from `updated_at` so
+    a later rename doesn't erase when it actually closed.
+    """
+
+    __tablename__ = "control_periods"
+    __table_args__ = (
+        CheckConstraint("ends_on > starts_on", name="ck_control_period_dates"),
+        CheckConstraint(f"status IN {CONTROL_PERIOD_STATUSES}", name="ck_control_period_status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    starts_on: Mapped[datetime.date] = mapped_column(nullable=False)
+    ends_on: Mapped[datetime.date] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="planned")
+    closed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+CONTROL_OCCURRENCE_ORIGINS = ("generated", "manual")
+
+
+class ControlOccurrence(Base):
+    """Canonical projection over the "control_occurrence" DomainEvent
+    aggregate (app/events.py) — NOT the source of truth for history.
+
+    One row per occurrence, `id` is the aggregate_id events are appended
+    against (see app/control_occurrences.py). Rebuildable from scratch via
+    `rebuild_control_occurrence_projection` — never write to this table
+    directly outside a projector function; always go through
+    `append_and_project`/`app/control_occurrences.py`.
+
+    "Missing/overdue" is a computed predicate
+    (`due_at < now() AND performed_at IS NULL`), never a stored column —
+    matches this app's existing `app/vendor_flags.py::compute_flags`
+    precedent of computing operational warnings live rather than storing
+    something that can drift.
+    """
+
+    __tablename__ = "control_occurrences"
+    __table_args__ = (
+        # Covers every occurrence WITH a control_period_id. Standard SQL
+        # treats NULL != NULL for uniqueness purposes (both SQLite and
+        # Postgres — same pitfall ControlOccurrenceEvidence's docstring
+        # calls out), so this constraint alone does NOT stop two
+        # period-less occurrences from sharing a due_at; the partial index
+        # below closes that gap for the nullable-control_period_id case.
+        UniqueConstraint(
+            "control_id", "control_period_id", "due_at", name="uq_occurrence_control_period_due"
+        ),
+        Index(
+            "uq_occurrence_control_due_no_period",
+            "control_id",
+            "due_at",
+            unique=True,
+            sqlite_where=text("control_period_id IS NULL"),
+            postgresql_where=text("control_period_id IS NULL"),
+        ),
+        CheckConstraint(f"origin IN {CONTROL_OCCURRENCE_ORIGINS}", name="ck_occurrence_origin"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # == aggregate_id; no default=new_id
+    control_id: Mapped[str] = mapped_column(ForeignKey("internal_controls.id"), nullable=False)
+    control_period_id: Mapped[str | None] = mapped_column(ForeignKey("control_periods.id"), nullable=True)
+    origin: Mapped[str] = mapped_column(String(16), nullable=False)
+
+    due_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    performed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    responsible_person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
+    performed_by_person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
+    scope_note: Mapped[str] = mapped_column(Text, default="")
+    evidence_note: Mapped[str] = mapped_column(Text, default="")
+
+    # Denormalized read-convenience timestamps, populated by the projector
+    # from the relevant event's recorded_at — not independently
+    # authoritative; full history is always in DomainEvent.
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
+
+    control: Mapped[InternalControl] = relationship(viewonly=True)
+    control_period: Mapped[ControlPeriod | None] = relationship(viewonly=True)
+    responsible_person: Mapped[Person | None] = relationship(
+        foreign_keys=[responsible_person_id], viewonly=True
+    )
+    performed_by: Mapped[Person | None] = relationship(foreign_keys=[performed_by_person_id], viewonly=True)
+
+
+class ControlOccurrenceEvidence(Base):
+    """Projection: which EvidenceSnapshot rows are linked to which
+    occurrence, populated by the "ControlOccurrenceEvidenceLinked"
+    projector — not written directly by routes.
+
+    A new, minimal join table rather than adding occurrence_id to the
+    existing EvidenceControlMapping — that table's
+    UNIQUE(evidence_snapshot_id, control_id) would need widening to
+    include occurrence_id, and because NULL != NULL for uniqueness in
+    both dialects, that would silently weaken today's "one mapping per
+    (evidence, control)" guarantee for existing all-NULL-occurrence rows
+    without a dialect-specific partial index this repo has deliberately
+    avoided elsewhere. Scoped to the AWS-connector-sourced EvidenceSnapshot
+    only — the only evidence storage that exists today; #13 will likely
+    need its own link to a future general evidence-upload mechanism.
+    """
+
+    __tablename__ = "control_occurrence_evidence"
+    __table_args__ = (
+        UniqueConstraint("occurrence_id", "evidence_snapshot_id", name="uq_occurrence_evidence"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    occurrence_id: Mapped[str] = mapped_column(ForeignKey("control_occurrences.id"), nullable=False)
+    evidence_snapshot_id: Mapped[str] = mapped_column(ForeignKey("evidence_snapshots.id"), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
 
 
 APPLICABILITY_VALUES = ("yes", "no")
