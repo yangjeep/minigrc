@@ -230,6 +230,47 @@ SQLite file (GRC_DATA_DIR/grc.db)   Policy files (GRC_DATA_DIR/policies/<id>/<ve
 - `app/csv_import.py::import_requirements_csv` validates every row before
   writing anything — a malformed file changes nothing.
 
+## System framework catalogs (issue #12)
+
+- `app/framework_catalog.py::reconcile_system_catalogs` idempotently
+  creates/fills two placeholder catalogs — ISO 27001 and SOC 2 (Security
+  category only) — identified by `Framework.catalog_key` (nullable,
+  unique; `NULL` for every user-created framework, never exposed on any
+  writable route). Called unconditionally on every startup, before
+  `app/seed.py::seed_if_empty`, and safe under concurrent callers: each
+  create attempt is wrapped in `session.begin_nested()` and recovers from
+  a real `IntegrityError` by re-`SELECT`ing the winning row, matching
+  `app/events.py`'s established idempotent-append pattern rather than a
+  new locking primitive. Never updates or removes an existing row —
+  additive only.
+- `Framework.is_primary` is a plain boolean (SOC 2 seeded `True`, ISO
+  `False`) driving list-ordering (`is_primary DESC, name`) on `/frameworks`
+  and the Dashboard — no enforced singleton, no toggle route yet.
+- `app/seed.py::seed_if_empty`'s demo `InternalControl`/`Risk` dataset is
+  gated on whether an `AuditEvent(entity_type="control", action="seed")`
+  already exists — not on `Framework` (never empty once reconciliation
+  always runs) or `InternalControl` (user-deletable, so gating on it would
+  silently reinject demo data after a deliberate deletion). It looks up
+  the canonical ISO/SOC 2 frameworks by `catalog_key` rather than creating
+  its own, and maps one demo control to both an ISO and a SOC 2 requirement
+  to demonstrate the shared-control-across-frameworks capability
+  (`ControlRequirementMapping` has no `framework_id` — already
+  framework-agnostic).
+- Migration `a248573ccdfe` backfills `catalog_key` onto a pre-#12
+  installation's existing seeded ISO framework by an exact, literal
+  name+version match, counted before acting: 0 matches is a no-op
+  (reconciliation creates a fresh row), exactly 1 match backfills it, more
+  than 1 leaves all candidates untouched and logs a warning rather than
+  guessing which one is canonical.
+- A more complete design for this area (Trust-Services-Category scoping,
+  a persistent legacy-framework-conflict admin UI, authorization changes
+  to framework routes, catalog-completeness gating) was designed but never
+  shipped — see
+  `docs/superpowers/specs/2026-07-21-feature14-multiframework-foundation-design.md`
+  on `origin/yangjeep/dev-soc2-2` and
+  `docs/superpowers/specs/2026-08-17-issue12-soc2-primary-framework-design.md`
+  §1.3/§7 for what was adopted here vs. deliberately deferred, and why.
+
 ## People and Vendor/System register
 
 - `app/models.py::Person` is a shared identity reference (vendor admins,
@@ -378,3 +419,8 @@ SQLite file (GRC_DATA_DIR/grc.db)   Policy files (GRC_DATA_DIR/policies/<id>/<ve
   behavior, and the structural (`/control-periods`) vs. operational
   (`/controls/{id}/occurrences*`, `/occurrences/{id}`) routes
   respectively.
+- `tests/test_framework_catalog.py` covers #12's system catalog
+  reconciliation: idempotency, the concurrent-creation recovery path
+  (a real `IntegrityError` forced deterministically via a mocked
+  pre-check, not flaky threading), never mutating existing requirement
+  content, and the shared-control-across-frameworks seed data.
