@@ -37,12 +37,12 @@ def utcnow() -> datetime.datetime:
 class Framework(Base):
     """A compliance framework, e.g. an ISO 27001 catalogue.
 
-    Modeled so more than one framework can exist side by side eventually
-    (a second ISO revision, SOC 2, etc.) without schema changes — but this
-    PR seeds exactly one, clearly labelled as sample/placeholder content.
+    Modeled so more than one framework can exist side by side (ISO 27001,
+    SOC 2, etc.) without schema changes.
     """
 
     __tablename__ = "frameworks"
+    __table_args__ = (UniqueConstraint("catalog_key", name="uq_framework_catalog_key"),)
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -52,6 +52,17 @@ class Framework(Base):
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    # Issue #12: identifies "this row is the canonical instance of system
+    # catalog X" (e.g. "iso27001-2022-sample", "soc2-2017-sample"),
+    # independent of the user-editable name/version — see
+    # app/framework_catalog.py. NULL for every user-created framework;
+    # never exposed on any writable route/register field.
+    catalog_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Minimal default/primary-framework flag — no enforced singleton, no
+    # toggle route yet (see docs/superpowers/specs/2026-08-17-issue12-
+    # soc2-primary-framework-design.md §11).
+    is_primary: Mapped[bool] = mapped_column(default=False)
 
     requirements: Mapped[list[FrameworkRequirement]] = relationship(
         back_populates="framework",
