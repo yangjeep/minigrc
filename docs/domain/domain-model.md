@@ -23,6 +23,25 @@ Public, secondary-source overviews of the *structure* of ISO/IEC 27001:2022
 This app does not grant, imply, or perform ISO 27001 certification.
 Certification is issued only by an accredited external certification body.
 
+**SOC 2 (added by issue #12):** the AICPA Trust Services Criteria document
+and its official ISO 27001 crosswalk are both licensed/paywalled content
+and are not fetched or reproduced anywhere in this repository. The seeded
+SOC 2 catalogue (`app/framework_catalog.py`) covers only the mandatory
+Security category's nine Common Criteria (CC) series, one representative
+reference code per series, with paraphrased placeholder titles/summaries —
+same `is_placeholder_content` convention as ISO. Public, secondary-source
+overviews of the *structure* of the Trust Services Criteria (not their
+normative text) were used:
+
+- ["The 5 SOC 2 Trust Services Criteria Explained"](https://cloudsecurityalliance.org/blog/2023/10/05/the-5-soc-2-trust-services-criteria-explained) — Cloud Security Alliance
+- ["SOC 2 Trust Services Criteria (TSC): A Guide"](https://www.cbh.com/insights/articles/soc-2-trust-services-criteria-guide/) — Cherry Bekaert
+- ["SOC 2 Common Criteria List: CC-Series Explained"](https://www.compassitc.com/blog/soc-2-common-criteria-list-cc-series-explained) — CompassITC
+- ["SOC 2 common criteria: What each CC control actually requires"](https://www.scrut.io/hub/soc-2/soc-2-common-criteria) — Scrut
+- ["SOC 2 Type 1 vs Type 2: What's the Difference?"](https://secureframe.com/hub/soc-2/type-1-vs-type-2) — Secureframe
+
+This app does not grant, imply, or perform SOC 2 attestation. A SOC 2
+report is issued only by an independent CPA firm.
+
 ## Structural summary used to design the schema
 
 ISO/IEC 27001:2022 separates:
