@@ -31,12 +31,14 @@ from app.routers import (
     auth,
     aws_connector,
     connections,
+    control_periods,
     controls,
     dashboard,
     evidence,
     frameworks,
     google_drive,
     google_oidc,
+    occurrences,
     people,
     placeholders,
     policies,
@@ -56,6 +58,7 @@ NAV_ITEMS = [
     ("Dashboard", "/"),
     ("Frameworks", "/frameworks"),
     ("Controls", "/controls"),
+    ("Control Periods", "/control-periods"),
     ("Policies", "/policies"),
     ("Evidence", "/evidence"),
     ("Risks", "/risks"),
@@ -152,6 +155,8 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
     app.include_router(frameworks.requirements_register_router)
     app.include_router(controls.router)
     app.include_router(controls.controls_register_router)
+    app.include_router(control_periods.router)
+    app.include_router(occurrences.router)
     app.include_router(policies.router)
     app.include_router(risks.router)
     app.include_router(people.router)

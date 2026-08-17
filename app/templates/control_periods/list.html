@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}Control Periods · minigrc{% endblock %}
+{% block content %}
+{{ page_header("Control Periods") }}
+<table>
+  <thead>
+    <tr><th>Name</th><th>Starts</th><th>Ends</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+    {% for period in periods %}
+    <tr>
+      <td><a href="/control-periods/{{ period.id }}">{{ period.name }}</a></td>
+      <td>{{ period.starts_on }}</td>
+      <td>{{ period.ends_on }}</td>
+      <td><span class="badge badge-{{ period.status }}">{{ period.status }}</span></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">No control periods yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if request.state.user.role == "admin" %}
+<h2>Add a control period</h2>
+<form method="post" action="/control-periods">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Name <input type="text" name="name" placeholder="e.g. SOC 2 Type II — H1 2026" required></label>
+  <label>Starts on <input type="date" name="starts_on" required></label>
+  <label>Ends on <input type="date" name="ends_on" required></label>
+  <button type="submit">Add control period</button>
+</form>
+{% endif %}
+{% endblock %}
