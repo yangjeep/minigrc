@@ -73,13 +73,13 @@ instruction.
 - [x] SQLite migration verified by hand: `upgrade head` → `downgrade base`
       → `upgrade head` full round trip, including the two new CHECK
       constraints and the partial unique index.
-- [ ] PostgreSQL live-migration test — extended
+- [x] PostgreSQL live-migration test — extended
       (`tests/test_postgres_compat.py::test_migrations_apply_cleanly_against_postgres`
       now also proves the partial index's NULL-vs-NULL semantics and the
-      new CHECK constraint against a real server) but not run in this
-      sandbox (no local Postgres); relies on CI's `test-postgres` job,
-      same standing convention as every other test in that function —
-      report its actual CI result rather than assuming green.
+      new CHECK constraint against a real server). Not run locally (no
+      Postgres in this sandbox); confirmed via CI's `test-postgres` job on
+      PR #52 — passed (39s), see
+      https://github.com/yangjeep/minigrc/actions/runs/32047366852/job/95438247060.
 - [x] Independent adversarial review (fresh subagent, full read of §12) —
       6 findings, all fixed; see Decisions below. Idempotency, the
       `/perform` + evidence-link savepoint handling, and the partial
@@ -149,10 +149,6 @@ instruction.
 
 ## Known Gaps / Follow-ups
 
-- PostgreSQL live-migration verification for this issue's tables has not
-  been observed passing in this session (no local Postgres) — confirm the
-  `test-postgres` CI job goes green on the pushed branch before treating
-  Postgres support as verified rather than "should work by construction."
 - Control-occurrence activity is completely absent from `/admin/audit-log`
   and the Dashboard's recent-activity widget (both read `AuditEvent`
   directly; occurrence mutations are event-sourced instead, deliberately,
