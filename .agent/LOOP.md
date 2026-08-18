@@ -13,7 +13,7 @@ For every new session:
 5. Read the target GitHub issue and any parent/blocked-by/depends-on issues.
 6. Read the issue-specific design/spec if one exists.
 7. Inspect the actual code, migrations, tests, and current docs touched by the issue.
-8. State which verification layers apply: unit, regression, integration, browser/E2E, Claude Desktop UAT.
+8. State which verification layers apply: unit, regression, integration, browser/E2E, headless UAT, Claude Desktop UAT.
 
 Do not assume planned architecture has landed because an issue or design doc describes it.
 
@@ -66,7 +66,7 @@ A good design must state:
 - security/privacy concerns;
 - downstream compatibility;
 - test strategy by layer;
-- representative Claude Desktop UAT scenario for user-visible work.
+- representative headless UAT scenario(s) for user-visible work, plus a Claude Desktop UAT scenario where that layer is required for the release slice.
 
 Challenge the issue if the simplest correct repository-grounded design differs from the wording.
 
@@ -96,9 +96,10 @@ Follow `.agent/TESTING.md`. At minimum, after implementation:
 9. exercise representative **browser/E2E** flow through real auth/CSRF/routes/forms/rendering for user-visible work;
 10. for event-backed domains, prove projection reset/rebuild reproduces equivalent current state;
 11. verify no secret/token/user data leaked into fixtures/logs/events/exports;
-12. prepare the **Claude Desktop UAT** runbook for user-visible features/release slices.
+12. run/extend **headless UAT** (`GRC_UAT_MODE=1 pytest -m uat tests/uat`, or `python -m app.cli uat`) for user-visible features/release slices — required, not skippable, even when Claude Desktop is unavailable;
+13. prepare the **Claude Desktop UAT** runbook for user-visible features/release slices.
 
-Do not treat a green unit test alone as proof of a stateful, migration, authorization, integration, or UX invariant.
+Do not treat a green unit test alone as proof of a stateful, migration, authorization, integration, or UX invariant. A green headless UAT run is required before Claude Desktop UAT is reported PASS, but headless UAT passing on its own is not a substitute for Claude Desktop UAT when that layer is available/required for the release slice.
 
 ## 7. Claude Desktop UAT gate
 
@@ -112,11 +113,11 @@ For user-visible work that is ready for acceptance:
 6. feed every defect into the bug-fix workflow below;
 7. rerun failed and nearby high-risk UAT scenarios after the fix.
 
-A PR may be implementation-complete but must be reported `UAT: PENDING` until UAT runs. It is not release-complete while required UAT is pending or failing.
+A PR may be implementation-complete but must be reported `Desktop UAT: PENDING` until Claude Desktop UAT runs — headless UAT, by contrast, must already be reported PASS/FAIL (never PENDING) for any user-visible change, since `.agent/TESTING.md` §1.5's harness has no dependency on Claude Desktop's availability. It is not release-complete while required UAT (headless or Desktop) is pending or failing.
 
 ## 8. Bug-fix loop
 
-Any defect discovered by tests, CI, adversarial review, Claude Desktop UAT, or a user report follows this exact loop:
+Any defect discovered by tests, CI, adversarial review, headless UAT, Claude Desktop UAT, or a user report follows this exact loop:
 
 1. **Capture** reproducible symptom, build/environment, actor/role, expected vs actual.
 2. **Reproduce before fixing** on the affected branch/environment when practical.
@@ -126,7 +127,7 @@ Any defect discovered by tests, CI, adversarial review, Claude Desktop UAT, or a
 6. **Run targeted tests**, including the new regression test.
 7. **Run full relevant regression suite** and applicable backend/integration/security checks.
 8. **Rerun affected browser/E2E path.**
-9. **Rerun affected Claude Desktop UAT scenario** when user-visible or UAT-discovered.
+9. **Rerun the affected headless UAT scenario**, and the Claude Desktop UAT scenario when Desktop is available, when user-visible or UAT-discovered.
 10. **Adversarially review the fix** for sibling bugs, auth bypass, event/history corruption, replay/idempotency errors, backend divergence, and migration/data issues.
 11. **Document** root cause, regression coverage, fix, retest results, and residual risk in PR/issue/worklog.
 
@@ -171,6 +172,7 @@ For normal implementation issues:
    - regression tests;
    - integration/backend tests;
    - browser/E2E scenarios;
+   - headless UAT scenarios PASS/FAIL (required for user-visible changes, never reported PENDING);
    - Claude Desktop UAT PASS/FAIL/PENDING;
    - security/integrity checks;
    - bugs found, root causes, regression tests, and fix status;
@@ -219,6 +221,7 @@ For each completed issue report:
 - Regression tests
 - Integration/backend tests
 - Browser/E2E verification
+- Headless UAT: PASS / FAIL with scenarios (required for user-visible work; not skippable)
 - Claude Desktop UAT: PASS / FAIL / PENDING with scenarios
 - Security/integrity findings
 - Bugs found during verification, root cause, regression coverage, fix status
