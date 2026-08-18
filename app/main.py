@@ -82,7 +82,17 @@ ADMIN_NAV_ITEMS: list[tuple[str, str]] = [
 CSRF_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
 
 
-def create_app(database_path: str | None = None, data_dir: str | None = None) -> FastAPI:
+def create_app(
+    database_path: str | None = None,
+    data_dir: str | None = None,
+    database_url: str | None = None,
+) -> FastAPI:
+    if database_url is not None and (database_path is not None or data_dir is not None):
+        raise ValueError(
+            "create_app: database_url is mutually exclusive with database_path/data_dir — "
+            "a caller selects exactly one relational backend override."
+        )
+
     settings = get_settings()
     configure_logging(settings.log_level)
 
@@ -101,6 +111,16 @@ def create_app(database_path: str | None = None, data_dir: str | None = None) ->
                 "database_url": "",
             }
         )
+    elif database_url is not None:
+        # Explicit database_url override (issue #38's headless UAT
+        # harness): lets a caller point create_app at a specific
+        # PostgreSQL URL without mutating the ambient DATABASE_URL
+        # environment variable or the process-wide get_settings()
+        # lru_cache, either of which would leak across fixtures/tests
+        # sharing this process. database_path is force-cleared for the
+        # same "exactly one backend" reason the branch above clears
+        # database_url.
+        settings = settings.model_copy(update={"database_url": database_url, "database_path": None})
 
     reject_ambiguous_database_config(settings)
     engine = build_engine(settings.resolved_engine_target)
