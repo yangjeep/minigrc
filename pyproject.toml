@@ -50,3 +50,11 @@ ignore = ["B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Headless UAT scenarios (issue #38) live under tests/uat/ and are marked
+# `uat` by each scenario module's `pytestmark`. They spin up a real
+# uvicorn server per scenario and are excluded from the default `pytest`
+# run so the ordinary fast unit/regression/integration suite (and this
+# repo's existing CI job) is unaffected. Run them explicitly with:
+#   GRC_UAT_MODE=1 pytest -m uat tests/uat
+markers = ["uat: headless end-to-end UAT scenario (see tests/uat/)"]
+addopts = "-m 'not uat'"
