@@ -257,6 +257,25 @@ def import_directory_command(directory: str, importer_name: str) -> int:
     return 0
 
 
+def uat_command(node_filter: str | None, postgres: bool) -> int:
+    """Run the headless UAT suite (issue #38) — one documented command
+    for CLI agents/CI, in place of remembering the underlying pytest
+    invocation. Lazily imports pytest so a minimal production install
+    (`pip install .`, no `[dev]` extras — see Dockerfile) never needs
+    pytest importable for any other CLI command."""
+    import os
+
+    import pytest
+
+    os.environ["GRC_UAT_MODE"] = "1"
+    k_expressions = [expr for expr in (node_filter, "postgres" if postgres else None) if expr]
+
+    args = ["-m", "uat", "tests/uat", "-v"]
+    if k_expressions:
+        args += ["-k", " and ".join(f"({expr})" for expr in k_expressions)]
+    return pytest.main(args)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -311,6 +330,16 @@ def main(argv: list[str] | None = None) -> int:
         "--importer", required=True, help="Importer name to apply to claimed files"
     )
 
+    uat_parser = subparsers.add_parser(
+        "uat", help="Run the headless UAT suite (issue #38) — see .agent/TESTING.md"
+    )
+    uat_parser.add_argument(
+        "-k", dest="node_filter", default=None, help="pytest -k expression to select scenarios"
+    )
+    uat_parser.add_argument(
+        "--postgres", action="store_true", help="Only run scenarios parametrized against Postgres"
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "migrate":
@@ -327,6 +356,8 @@ def main(argv: list[str] | None = None) -> int:
         return import_csv_command(args.importer, args.file, args.framework_id)
     if args.command == "import-directory":
         return import_directory_command(args.directory, args.importer)
+    if args.command == "uat":
+        return uat_command(args.node_filter, args.postgres)
 
     parser.print_help()
     return 1
