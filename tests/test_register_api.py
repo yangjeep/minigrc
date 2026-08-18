@@ -140,6 +140,56 @@ def test_delete_removes_row(logged_in_client):
     assert row["id"] not in [r["id"] for r in listing]
 
 
+def test_delete_still_cascades_mappings(logged_in_client, app):
+    """InternalControl.mappings has cascade="all, delete-orphan" by
+    existing design — a control's requirement mappings are a structural
+    join, not a historical fact worth blocking deletion for. Confirms
+    issue #50's fix (below) doesn't regress this pre-existing, intended
+    cascade behavior."""
+    from app.models import ControlRequirementMapping, Framework, FrameworkRequirement
+
+    row = _create_control(logged_in_client, name="Delete me with mapping")
+    with app.state.session_factory() as session:
+        framework = Framework(name="Test Framework", version="1.0", description="")
+        session.add(framework)
+        session.flush()
+        requirement = FrameworkRequirement(
+            framework_id=framework.id, reference_code="T.1", title="Test requirement", summary=""
+        )
+        session.add(requirement)
+        session.flush()
+        session.add(ControlRequirementMapping(control_id=row["id"], requirement_id=requirement.id))
+        session.commit()
+
+    response = logged_in_client.delete(f"{REGISTER_URL}/{row['id']}", headers=_csrf_headers(logged_in_client))
+    assert response.status_code == 204
+
+    with app.state.session_factory() as session:
+        assert session.query(ControlRequirementMapping).filter_by(control_id=row["id"]).count() == 0
+
+
+def test_delete_rejects_row_with_dependent_occurrence(logged_in_client, app):
+    """Same FK-guard regression, exercised through issue #11's
+    ControlOccurrence — the specific dependent-row shape #50 was filed in
+    anticipation of."""
+    from app.control_occurrences import record_occurrence_manually
+    from app.models import ControlOccurrence, InternalControl
+
+    row = _create_control(logged_in_client, name="Delete me with occurrence")
+    with app.state.session_factory() as session:
+        control = session.get(InternalControl, row["id"])
+        record_occurrence_manually(session, control, actor_type="user")
+        session.commit()
+
+    response = logged_in_client.delete(f"{REGISTER_URL}/{row['id']}", headers=_csrf_headers(logged_in_client))
+    assert response.status_code == 422
+    assert "__all__" in response.json()["detail"]
+
+    with app.state.session_factory() as session:
+        assert session.get(InternalControl, row["id"]) is not None
+        assert session.query(ControlOccurrence).filter_by(control_id=row["id"]).count() == 1
+
+
 def test_bulk_update_all_or_nothing_on_one_bad_row(logged_in_client):
     good = _create_control(logged_in_client, name="Bulk good")
     other = _create_control(logged_in_client, name="Bulk other")
