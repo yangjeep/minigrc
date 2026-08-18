@@ -37,6 +37,9 @@ pytest
 pytest tests/test_pages.py
 pytest tests/test_pages.py::test_dashboard_loads
 
+GRC_UAT_MODE=1 pytest -m uat tests/uat   # headless UAT (issue #38); see .agent/TESTING.md
+python -m app.cli uat                    # same, via one documented command
+
 ruff check .
 ruff format .
 ruff format --check .
@@ -78,7 +81,7 @@ Before writing code:
 3. Inspect current code/schema/migrations/tests/docs/recent merged work.
 4. Verify assumptions against repository reality.
 5. Produce/update a design first when the issue is architecture-sensitive or explicitly requires one.
-6. Identify which test layers apply: unit, regression, integration, browser/E2E, Claude Desktop UAT.
+6. Identify which test layers apply: unit, regression, integration, browser/E2E, headless UAT, Claude Desktop UAT.
 
 After writing code:
 
@@ -89,12 +92,13 @@ After writing code:
 5. Run relevant SQLite/PostgreSQL migration/compatibility checks for persistence changes.
 6. Run relevant security/dependency/secret checks available in the repo.
 7. Exercise representative browser/E2E user flows for user-visible changes.
-8. Perform the adversarial review in `.agent/LOOP.md`.
-9. Prepare/execute the Claude Desktop UAT runbook required by `.agent/TESTING.md` when the feature is user-visible and ready for acceptance.
-10. Any defect follows the regression-first bug-fix loop in `.agent/TESTING.md`; rerun affected integration/UAT scenarios after the fix.
-11. Update required docs/worklog.
-12. Commit logically, push the task branch, and create/update a draft PR unless the task contract says otherwise.
-13. Do not merge without explicit authorization.
+8. Run headless UAT (`GRC_UAT_MODE=1 pytest -m uat tests/uat`, or `python -m app.cli uat`) for user-visible changes — required, not skippable.
+9. Perform the adversarial review in `.agent/LOOP.md`.
+10. Prepare/execute the Claude Desktop UAT runbook required by `.agent/TESTING.md` when the feature is user-visible and ready for acceptance.
+11. Any defect follows the regression-first bug-fix loop in `.agent/TESTING.md`; rerun affected integration/UAT scenarios after the fix.
+12. Update required docs/worklog.
+13. Commit logically, push the task branch, and create/update a draft PR unless the task contract says otherwise.
+14. Do not merge without explicit authorization.
 
 ## Current layout
 
@@ -119,6 +123,7 @@ A task is not complete until:
 - full relevant regression tests pass;
 - applicable integration tests pass, including both SQLite/PostgreSQL when backend-neutral persistence changed;
 - representative browser/E2E flows pass for user-visible changes;
+- headless UAT (`tests/uat/`) passes for user-visible changes — required regardless of Claude Desktop availability;
 - Claude Desktop UAT is PASS for release-ready user-visible work, or explicitly PENDING and therefore not release-complete;
 - lint/format are clean;
 - migrations/backfills are reviewed and verified where applicable;
