@@ -244,7 +244,7 @@ def poll_for_visibility(session_factory, fetch):
         time.sleep(_POLL_INTERVAL_SECONDS)
 
 
-def create_uat_user(session_factory, *, email: str, role: str = "user") -> User:
+def create_uat_user(session_factory, *, email: str, role: str = "operator") -> User:
     """Deterministic fixture login user — mirrors tests/conftest.py's
     existing test_user/admin_user pattern. A login credential is not
     itself a material compliance fact, so a direct ORM insert here (as

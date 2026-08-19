@@ -29,7 +29,7 @@ def test_first_created_user_becomes_admin(tmp_path, monkeypatch):
         first = session.scalar(select(User).where(User.email == "first@example.com"))
         second = session.scalar(select(User).where(User.email == "second@example.com"))
         assert first.role == "admin"
-        assert second.role == "user"
+        assert second.role == "operator"
 
     get_settings.cache_clear()
 
@@ -91,7 +91,7 @@ def test_promote_admin_is_idempotent(tmp_path, monkeypatch):
 
 
 def test_require_admin_rejects_regular_user():
-    regular = User(email="user@example.com", password_hash="x", role="user")
+    regular = User(email="user@example.com", password_hash="x", role="operator")
     with pytest.raises(HTTPException) as exc_info:
         require_admin(user=regular)
     assert exc_info.value.status_code == 403

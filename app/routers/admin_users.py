@@ -83,7 +83,7 @@ def create_user(
     if db.scalar(select(User).where(User.email == normalized)) is not None:
         return redirect_with_flash("/admin/users/new", "A user with that email already exists.", kind="error")
 
-    user = User(email=normalized, password_hash="", role="user", status="active")
+    user = User(email=normalized, password_hash="", role="operator", status="active")
     db.add(user)
     db.flush()
     record_audit_event(
