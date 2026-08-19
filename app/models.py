@@ -909,6 +909,8 @@ USER_ROLES = ("admin", "operator", "reader", "auditor")
 #   between them; staged explicitly rather than faked.
 USER_STATUSES = ("active", "disabled", "pending")
 
+ROLE_SOURCES = ("local", "oidc_mapped")
+
 
 class User(Base):
     """A local application user.
@@ -940,6 +942,7 @@ class User(Base):
     __table_args__ = (
         CheckConstraint(f"role IN {USER_ROLES}", name="ck_user_role"),
         CheckConstraint(f"status IN {USER_STATUSES}", name="ck_user_status"),
+        CheckConstraint(f"role_source IN {ROLE_SOURCES}", name="ck_user_role_source"),
         UniqueConstraint("google_subject", name="uq_user_google_subject"),
     )
 
@@ -948,6 +951,13 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="operator")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    # "local": an admin's explicit decision (Admin > Users) or the
+    # bootstrap first-admin grant — never touched by OIDC login.
+    # "oidc_mapped": owned by the generic-OIDC claim/role mapping flow
+    # (issue #18) — recomputed from current claims on every login once
+    # an admin configures at least one OidcRoleMapping row; a no-op
+    # until then. See app/oidc_role_mapping.py.
+    role_source: Mapped[str] = mapped_column(String(16), nullable=False, default="local")
     google_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
@@ -1516,6 +1526,11 @@ class OidcProviderSettings(Base):
     secret_id: Mapped[str | None] = mapped_column(ForeignKey("secrets.id"), nullable=True)
     allowed_domains: Mapped[str] = mapped_column(Text, default="")
     auto_provision_enabled: Mapped[bool] = mapped_column(default=False)
+    # Which verified ID token claim carries group/role membership (issue
+    # #18) — read as-is: a list claim is used item-by-item, a string
+    # claim is treated as one value, never split on a guessed delimiter.
+    # See app/oidc_role_mapping.py.
+    role_claim_name: Mapped[str] = mapped_column(String(255), default="groups")
     updated_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -1550,6 +1565,32 @@ class ExternalIdentity(Base):
 
     def __repr__(self) -> str:
         return f"ExternalIdentity(id={self.id!r}, issuer={self.issuer!r})"
+
+
+class OidcRoleMapping(Base):
+    """Admin-configured claim-value -> miniGRC role mapping for the
+    generic OIDC login path (issue #18). One row per distinct claim
+    value — unique so there is never an ambiguous "which mapping wins"
+    question for a single value; when a user's claims match more than
+    one row, `app/oidc_role_mapping.py::compute_mapped_role` picks the
+    highest-precedence role using `USER_ROLES`'s existing order.
+    """
+
+    __tablename__ = "oidc_role_mappings"
+    __table_args__ = (
+        UniqueConstraint("claim_value", name="uq_oidc_role_mapping_claim_value"),
+        CheckConstraint(f"role IN {USER_ROLES}", name="ck_oidc_role_mapping_role"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    claim_value: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    def __repr__(self) -> str:
+        return f"OidcRoleMapping(id={self.id!r}, claim_value={self.claim_value!r}, role={self.role!r})"
 
 
 CONNECTION_DB_TYPES = ("postgres", "mysql", "sqlite", "generic")

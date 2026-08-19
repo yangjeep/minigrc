@@ -36,6 +36,7 @@ class ResolvedOidcConfig:
     allowed_domains: set[str]
     auto_provision_enabled: bool
     redirect_uri: str
+    role_claim_name: str
     source: str  # "admin" | "env" | "unconfigured"
 
 
@@ -66,6 +67,7 @@ def resolve_oidc_config(db: Session, settings: Settings) -> ResolvedOidcConfig:
             allowed_domains=allowed_domains,
             auto_provision_enabled=row.auto_provision_enabled,
             redirect_uri=settings.oidc_redirect_uri,
+            role_claim_name=row.role_claim_name or "groups",
             source="admin",
         )
 
@@ -78,5 +80,6 @@ def resolve_oidc_config(db: Session, settings: Settings) -> ResolvedOidcConfig:
         allowed_domains=settings.oidc_allowed_domains_set,
         auto_provision_enabled=True,
         redirect_uri=settings.oidc_redirect_uri,
+        role_claim_name=settings.oidc_role_claim_name or "groups",
         source="env" if settings.oidc_enabled else "unconfigured",
     )
