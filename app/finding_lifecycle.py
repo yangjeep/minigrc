@@ -32,6 +32,10 @@ from app.models import (
 )
 
 
+def _parse_due_date(value: str | None) -> datetime.date | None:
+    return datetime.date.fromisoformat(value) if value else None
+
+
 def _project_opened(session: Session, event: DomainEvent) -> None:
     payload = json.loads(event.payload_json)
     session.add(
@@ -44,7 +48,7 @@ def _project_opened(session: Session, event: DomainEvent) -> None:
             control_id=payload.get("control_id"),
             source_test_id=payload.get("source_test_id"),
             owner_person_id=payload.get("owner_person_id"),
-            due_date=payload.get("due_date"),
+            due_date=_parse_due_date(payload.get("due_date")),
             created_at=event.recorded_at,
             updated_at=event.recorded_at,
         )
