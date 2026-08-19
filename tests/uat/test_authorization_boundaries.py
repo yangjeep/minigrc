@@ -8,8 +8,14 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from app.models import ControlPeriod, InternalControl, Person, Risk
-from tests.uat.harness import UAT_PASSWORD, create_uat_user, csrf_header_value, extract_csrf_field
+from app.models import ControlPeriod, InternalControl, Risk
+from tests.uat.harness import (
+    UAT_PASSWORD,
+    create_uat_user,
+    csrf_header_value,
+    extract_csrf_field,
+    redirect_path,
+)
 
 pytestmark = pytest.mark.uat
 
@@ -76,10 +82,7 @@ def test_stale_csrf_token_fails_closed_without_mutating_state(uat_server, uat_cl
         follow_redirects=False,
     )
     assert person_response.status_code == 303
-    with session_factory() as session:
-        candidate_owner = session.scalar(
-            select(Person).where(Person.email == "uat-csrf-boundary-owner@example.com")
-        )
+    candidate_owner_id = redirect_path(person_response).rsplit("/", 1)[-1]
 
     control_page = client.get(f"/controls/{control_id}")
     assert control_page.status_code == 200
@@ -87,7 +90,7 @@ def test_stale_csrf_token_fails_closed_without_mutating_state(uat_server, uat_cl
 
     response = client.post(
         f"/controls/{control_id}/owner",
-        data={"owner_person_id": candidate_owner.id, "csrf_token": real_csrf + "-tampered"},
+        data={"owner_person_id": candidate_owner_id, "csrf_token": real_csrf + "-tampered"},
         follow_redirects=False,
     )
 
