@@ -12,6 +12,38 @@
 </div>
 {% endif %}
 
+<h2>Readiness queue</h2>
+<p class="text-muted">
+  {{ readiness_items|length }} item(s) need attention, computed live from current control, evidence,
+  test, and finding state — never a separately maintained checklist.
+</p>
+<form method="get" action="/" class="mb-3">
+  <label class="form-label">Framework</label>
+  <select class="form-select" name="framework_id" onchange="this.form.submit()">
+    <option value="">All frameworks</option>
+    {% for framework, _progress in progress_list %}
+    <option value="{{ framework.id }}" {% if framework.id == selected_framework_id %}selected{% endif %}>
+      {{ framework.name }}
+    </option>
+    {% endfor %}
+  </select>
+</form>
+<table class="table">
+  <thead><tr><th>Category</th><th>Reason</th><th>Due</th><th></th></tr></thead>
+  <tbody>
+    {% for item in readiness_items %}
+    <tr>
+      <td>{{ readiness_categories.get(item.category, item.category) }}</td>
+      <td>{{ item.reason }}</td>
+      <td>{{ item.due_on or "—" }}</td>
+      <td><a href="{{ item.link }}">Resolve</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">Nothing needs attention right now.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
 <div class="stat-row">
   <div class="stat-card">
     <div class="stat-value">{{ framework_count }}</div>
