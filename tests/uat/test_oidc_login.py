@@ -41,6 +41,7 @@ from tests.uat.harness import (
     build_uat_app,
     create_uat_user,
     extract_csrf_field,
+    poll_for_visibility,
 )
 
 pytestmark = pytest.mark.uat
@@ -137,13 +138,22 @@ def test_admin_configures_sso_and_new_employee_signs_in_end_to_end(uat_server, u
         assert dashboard.status_code == 200
         assert "new-employee@example.com" in dashboard.text or "Signed in" in dashboard.text
 
-        with session_factory() as session:
+        # poll_for_visibility guards against issue #57's residual: the
+        # callback's 303 response can be sent before its own request's
+        # commit actually lands, under thread-pool contention (see
+        # tests/uat/harness.py and issue #72 for the UAT flake this
+        # class of gap caused elsewhere).
+        def _fetch_new_employee(session):
             user = session.scalar(select(User).where(User.email == "new-employee@example.com"))
-            assert user is not None
-            assert user.status == "active"
+            if user is None:
+                return None
             identity = session.scalar(select(ExternalIdentity).where(ExternalIdentity.user_id == user.id))
-            assert identity.issuer == ISSUER
-            assert identity.subject == "uat-employee-1"
+            return (user, identity) if identity is not None else None
+
+        user, identity = poll_for_visibility(session_factory, _fetch_new_employee)
+        assert user.status == "active"
+        assert identity.issuer == ISSUER
+        assert identity.subject == "uat-employee-1"
 
         # Sign out, then sign back in with the same external identity — recognized as
         # the same returning user, not re-created.
@@ -157,11 +167,11 @@ def test_admin_configures_sso_and_new_employee_signs_in_end_to_end(uat_server, u
 
         with session_factory() as session:
             users = session.scalars(select(User).where(User.email == "new-employee@example.com")).all()
-            assert len(users) == 1
             identities = session.scalars(
                 select(ExternalIdentity).where(ExternalIdentity.subject == "uat-employee-1")
             ).all()
-            assert len(identities) == 1
+        assert len(users) == 1
+        assert len(identities) == 1
 
     # A different external identity asserting the SAME email is rejected, never merged.
     with httpx.Client(base_url=base_url, timeout=10.0) as attacker_client:
