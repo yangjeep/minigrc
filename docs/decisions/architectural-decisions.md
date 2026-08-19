@@ -494,3 +494,26 @@ silently regress in a future feature.
 
 **Supersedes:** Nothing — this documents *process*, not a technical
 choice superseding an earlier one.
+
+## 26. RBAC widens the binary admin/user role to four coarse roles
+
+**Decision:** `app/models.py::USER_ROLES` is now
+`("admin", "operator", "reader", "auditor")` (issue #37), not the binary
+`("user", "admin")` decision #12 originally recorded. `operator` is the
+1:1 rename of the old plain `user` role. `app/deps.py::require_write_access`
+(`admin`/`operator`) now gates every material-mutation route/register
+action that was previously reachable by any logged-in user regardless
+of role. Object/period-scoped access for `reader` vs. `auditor` remains
+deferred until #30 (compliance scoping) exists to express it against;
+the two roles are server-side identical in this slice by explicit
+design, not by oversight.
+
+**Rationale:** A binary admin/user split could not express "can view
+everything but never mutate compliance state" — a real requirement for
+external-auditor and read-only-stakeholder personas. See
+`docs/superpowers/specs/2026-08-19-issue37-rbac-design.md` for the full
+inventory and `docs/worklog/2026-08-19-issue37-rbac.md` for
+verification.
+
+**Supersedes:** Decision #12 ("Binary admin authorization, not general
+RBAC").
