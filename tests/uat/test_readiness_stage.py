@@ -9,18 +9,27 @@ docs/superpowers/specs/2026-08-19-issue33-readiness-landing-page-design.md §5.
 from __future__ import annotations
 
 import re
+import time
 
 import pytest
 from sqlalchemy import select
 
 from app.models import InternalControl
-from tests.uat.harness import UAT_PASSWORD, create_uat_user, extract_csrf_field, redirect_path
+from tests.uat.harness import (
+    UAT_PASSWORD,
+    create_uat_user,
+    extract_csrf_field,
+    poll_for_visibility,
+    redirect_path,
+)
 
 pytestmark = pytest.mark.uat
 
 ADMIN_EMAIL = "uat-stage-admin@example.com"
 
 _STAGE_RE = re.compile(r"Readiness stage: ([^.]+)\.")
+_STAGE_POLL_TIMEOUT_SECONDS = 2.0
+_STAGE_POLL_INTERVAL_SECONDS = 0.05
 
 
 def _login(client, email):
@@ -42,12 +51,35 @@ def _current_stage(client) -> str:
     return match.group(1)
 
 
+def _assert_stage_eventually(client, expected: str) -> None:
+    """Retry the stage read for a short bounded window before failing.
+
+    Guards against issue #57's residual: the response to a preceding
+    state-changing POST can be sent to the client before that request's
+    own `get_db` dependency cleanup (`session.commit()`) actually lands,
+    under thread-pool contention — a real, measured, backend-independent
+    gap (see tests/test_sqlite_read_after_write.py), not a SQLite-only
+    quirk. `_current_stage` reads through a fresh GET, so — unlike a raw
+    DB peek — a single miss here is expected to resolve on a quick
+    bounded retry. See issue #72 for the UAT-observed flake this fixes.
+    """
+    deadline = time.monotonic() + _STAGE_POLL_TIMEOUT_SECONDS
+    while True:
+        stage = _current_stage(client)
+        if stage == expected:
+            return
+        if time.monotonic() > deadline:
+            assert stage == expected
+            return
+        time.sleep(_STAGE_POLL_INTERVAL_SECONDS)
+
+
 def test_stage_progresses_and_regresses_with_real_state(uat_server, uat_client):
     _base_url, session_factory = uat_server
     create_uat_user(session_factory, email=ADMIN_EMAIL, role="admin")
     client = _login(uat_client, ADMIN_EMAIL)
 
-    assert _current_stage(client) == "Scope incomplete"
+    _assert_stage_eventually(client, "Scope incomplete")
 
     # Define scope -> foundation incomplete (starter controls not yet
     # generated for the primary framework).
@@ -58,7 +90,7 @@ def test_stage_progresses_and_regresses_with_real_state(uat_server, uat_client):
         follow_redirects=False,
     )
     assert define_response.status_code == 303
-    assert _current_stage(client) == "Foundation incomplete"
+    _assert_stage_eventually(client, "Foundation incomplete")
 
     # Generate starter controls, then assign owners to every control that
     # still needs one (the register grid, same as tests/test_register_api.py).
@@ -73,13 +105,22 @@ def test_stage_progresses_and_regresses_with_real_state(uat_server, uat_client):
     # of pinpointing the actual failing action.
     assert generate_response.status_code == 303
     assert "flash_kind=error" not in generate_response.headers["location"]
+
+    # Wait for the just-created controls to actually be visible before
+    # backfilling owners — the same #57 residual (see
+    # _assert_stage_eventually's docstring) can otherwise make this
+    # raw DB peek race the POST's own commit and silently back-fill
+    # nothing, which then reads as a confusing downstream stage
+    # mismatch rather than a visibility gap in this peek itself.
+    poll_for_visibility(session_factory, lambda s: s.scalars(select(InternalControl)).all() or None)
+
     with session_factory() as session:
         for control in session.scalars(select(InternalControl)).all():
             if not control.owner and control.owner_person_id is None:
                 control.owner = "security@example.com"
         session.commit()
 
-    assert _current_stage(client) == "Operating controls"
+    _assert_stage_eventually(client, "Operating controls")
 
     # Start an operating period.
     period_form = client.get("/control-periods")
@@ -102,7 +143,7 @@ def test_stage_progresses_and_regresses_with_real_state(uat_server, uat_client):
         follow_redirects=False,
     )
 
-    assert _current_stage(client) == "Audit-package ready"
+    _assert_stage_eventually(client, "Audit-package ready")
 
     # Introduce a real gap: open a finding.
     finding_form = client.get("/findings/new")
@@ -118,7 +159,7 @@ def test_stage_progresses_and_regresses_with_real_state(uat_server, uat_client):
     assert create_finding.status_code == 303
     finding_id = redirect_path(create_finding).rsplit("/", 1)[-1]
 
-    assert _current_stage(client) == "Testing/remediation incomplete"
+    _assert_stage_eventually(client, "Testing/remediation incomplete")
 
     # Resolve it — the stage recovers deterministically, with no separate
     # "clear the flag" action.
@@ -130,4 +171,4 @@ def test_stage_progresses_and_regresses_with_real_state(uat_server, uat_client):
     )
     assert close_response.status_code == 303
 
-    assert _current_stage(client) == "Audit-package ready"
+    _assert_stage_eventually(client, "Audit-package ready")
