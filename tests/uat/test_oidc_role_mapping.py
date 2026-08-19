@@ -29,6 +29,7 @@ from tests.uat.harness import (
     build_uat_app,
     create_uat_user,
     extract_csrf_field,
+    poll_for_visibility,
 )
 
 pytestmark = pytest.mark.uat
@@ -121,6 +122,30 @@ def _sign(**overrides) -> str:
     return jwt.encode(header, claims, RSA_KEY)
 
 
+def _wait_for_user_role(session_factory, *, user_id=None, email=None, expected_role):
+    """Poll (see tests/uat/harness.py::poll_for_visibility) for a User
+    row — looked up by id or email — to reflect `expected_role`. Guards
+    against the documented SQLite/FastAPI response-vs-commit-ordering
+    read-after-write gap (issues #55/#57): a raw DB peek immediately
+    after an HTTP write can otherwise observe a stale prior value."""
+
+    def fetch(session):
+        if user_id is not None:
+            user = session.get(User, user_id)
+        else:
+            user = session.scalar(select(User).where(User.email == email))
+        return user if user is not None and user.role == expected_role else None
+
+    return poll_for_visibility(session_factory, fetch)
+
+
+def _wait_for_oidc_settings(session_factory):
+    def fetch(session):
+        return session.scalar(select(OidcProviderSettings))
+
+    return poll_for_visibility(session_factory, fetch)
+
+
 def _sso_login(sso_client, *, groups):
     with (
         patch("app.routers.oidc.discover_provider_metadata", return_value=_metadata()),
@@ -152,11 +177,11 @@ def test_role_mapping_promotes_and_admin_pin_wins_over_later_login(uat_server, u
         assert first.status_code == 303
         assert "session" in first.cookies
 
-        with session_factory() as session:
-            user = session.scalar(select(User).where(User.email == "mapped-employee@example.com"))
-            assert user.role == "auditor"
-            assert user.role_source == "oidc_mapped"
-            user_id = user.id
+        user = _wait_for_user_role(
+            session_factory, email="mapped-employee@example.com", expected_role="auditor"
+        )
+        assert user.role_source == "oidc_mapped"
+        user_id = user.id
 
         # Sign out, sign back in with a different group -> promoted.
         page = employee_client.get("/")
@@ -165,9 +190,7 @@ def test_role_mapping_promotes_and_admin_pin_wins_over_later_login(uat_server, u
 
         second = _sso_login(employee_client, groups=["sec-admins"])
         assert second.status_code == 303
-        with session_factory() as session:
-            user = session.get(User, user_id)
-            assert user.role == "admin"
+        _wait_for_user_role(session_factory, user_id=user_id, expected_role="admin")
 
     # Admin manually pins the role via the real Users edit form.
     edit_page = admin_client.get(f"/admin/users/{user_id}/edit")
@@ -178,10 +201,8 @@ def test_role_mapping_promotes_and_admin_pin_wins_over_later_login(uat_server, u
         follow_redirects=False,
     )
     assert pin_response.status_code == 303
-    with session_factory() as session:
-        user = session.get(User, user_id)
-        assert user.role == "reader"
-        assert user.role_source == "local"
+    user = _wait_for_user_role(session_factory, user_id=user_id, expected_role="reader")
+    assert user.role_source == "local"
 
     # A later SSO login asserting a group mapped to "admin" no longer
     # overrides the admin's pinned role.
@@ -204,8 +225,9 @@ def test_role_claim_name_is_configurable(uat_server, uat_client):
     admin_client = _login_local(uat_client, ADMIN_EMAIL)
     _configure_oidc(admin_client)
 
+    row = _wait_for_oidc_settings(session_factory)
     with session_factory() as session:
-        row = session.scalar(select(OidcProviderSettings))
+        row = session.get(OidcProviderSettings, row.id)
         row.role_claim_name = "roles"
         session.commit()
 
@@ -229,6 +251,4 @@ def test_role_claim_name_is_configurable(uat_server, uat_client):
         assert callback_response.status_code == 303
         assert login_response.status_code == 303
 
-    with session_factory() as session:
-        user = session.scalar(select(User).where(User.email == "mapped-employee@example.com"))
-        assert user.role == "operator"
+    _wait_for_user_role(session_factory, email="mapped-employee@example.com", expected_role="operator")
