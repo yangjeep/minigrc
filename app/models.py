@@ -359,6 +359,231 @@ class ControlOccurrenceEvidenceArtifact(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class ControlTestPopulation(Base):
+    """A frozen, reproducible set of ControlOccurrence rows to sample from
+    (issue #13).
+
+    Plain row, not event-sourced — matches ControlPeriod's precedent
+    ("scheduling/scoping metadata that gates testing, not itself the
+    material compliance fact") rather than ControlOccurrence's continuously
+    projected shape: nothing in this domain ever updates a population after
+    creation (no edit route exists), so there is no multi-step lifecycle to
+    replay. `criteria_note` is a free-text human explanation of how this
+    population was scoped — never a query DSL or an implied universal rule.
+    """
+
+    __tablename__ = "control_test_populations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    control_id: Mapped[str] = mapped_column(ForeignKey("internal_controls.id"), nullable=False)
+    control_period_id: Mapped[str | None] = mapped_column(ForeignKey("control_periods.id"), nullable=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    criteria_note: Mapped[str] = mapped_column(Text, default="")
+    frozen_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    items: Mapped[list[ControlTestPopulationItem]] = relationship(
+        back_populates="population", cascade="all, delete-orphan"
+    )
+
+
+class ControlTestPopulationItem(Base):
+    """One ControlOccurrence frozen into a population at `freeze_population`
+    time. Never updated or deleted afterward — copying the occurrence id in
+    at freeze time (rather than a live query) is what keeps a later new
+    occurrence, or a correction to an already-frozen occurrence, from
+    silently changing the historical sample basis."""
+
+    __tablename__ = "control_test_population_items"
+    __table_args__ = (
+        UniqueConstraint("population_id", "control_occurrence_id", name="uq_population_item_occurrence"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    population_id: Mapped[str] = mapped_column(ForeignKey("control_test_populations.id"), nullable=False)
+    control_occurrence_id: Mapped[str] = mapped_column(ForeignKey("control_occurrences.id"), nullable=False)
+
+    population: Mapped[ControlTestPopulation] = relationship(back_populates="items")
+
+
+class ControlTestSample(Base):
+    """A selection drawn from a ControlTestPopulation (issue #13).
+
+    Plain row, same reasoning as ControlTestPopulation — created once, never
+    edited. `selection_method`/`selection_rationale` are free text (e.g.
+    "haphazard, 3 of 12 monthly occurrences") — no sample-size algorithm is
+    encoded anywhere in this domain, per the issue's explicit instruction
+    not to imply false audit certainty.
+    """
+
+    __tablename__ = "control_test_samples"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    population_id: Mapped[str] = mapped_column(ForeignKey("control_test_populations.id"), nullable=False)
+    selection_method: Mapped[str] = mapped_column(String(255), default="")
+    selection_rationale: Mapped[str] = mapped_column(Text, default="")
+    selected_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    items: Mapped[list[ControlTestSampleItem]] = relationship(
+        back_populates="sample", cascade="all, delete-orphan"
+    )
+
+
+class ControlTestSampleItem(Base):
+    """One population item selected into a sample. Never updated/deleted."""
+
+    __tablename__ = "control_test_sample_items"
+    __table_args__ = (
+        UniqueConstraint("sample_id", "population_item_id", name="uq_sample_item_population_item"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    sample_id: Mapped[str] = mapped_column(ForeignKey("control_test_samples.id"), nullable=False)
+    population_item_id: Mapped[str] = mapped_column(
+        ForeignKey("control_test_population_items.id"), nullable=False
+    )
+
+    sample: Mapped[ControlTestSample] = relationship(back_populates="items")
+
+
+TEST_RESULTS = ("no_exceptions", "exceptions_noted")
+
+
+class ControlTest(Base):
+    """Canonical projection over the "control_test" DomainEvent aggregate
+    (issue #13) — NOT the source of truth for history.
+
+    Grows over time exactly like ControlOccurrence: "ControlTestRecorded"
+    creates the row (+ its ControlTestException children, from the same
+    payload); a later "ControlTestEvidenceLinked" event can attach evidence
+    afterward. A test is never corrected in place — a retest is a NEW row
+    with `retest_of_test_id` pointing back, per the issue's explicit
+    "retest results are new facts, not edits of prior failures."
+    `sample_id` is nullable: a direct-observation test (e.g. inspecting one
+    current configuration) needs no formal sample.
+    """
+
+    __tablename__ = "control_tests"
+    __table_args__ = (CheckConstraint(f"result IN {TEST_RESULTS}", name="ck_control_test_result"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # == aggregate_id; no default=new_id
+    control_id: Mapped[str] = mapped_column(ForeignKey("internal_controls.id"), nullable=False)
+    control_period_id: Mapped[str | None] = mapped_column(ForeignKey("control_periods.id"), nullable=True)
+    sample_id: Mapped[str | None] = mapped_column(ForeignKey("control_test_samples.id"), nullable=True)
+    procedure_description: Mapped[str] = mapped_column(Text, default="")
+    tester_person_id: Mapped[str] = mapped_column(ForeignKey("people.id"), nullable=False)
+    performed_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
+    result: Mapped[str] = mapped_column(String(32), nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    retest_of_test_id: Mapped[str | None] = mapped_column(ForeignKey("control_tests.id"), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class ControlTestException(Base):
+    """One deviation/exception noted during a ControlTest. `sample_item_id`
+    is nullable — a process-level exception isn't always tied to one
+    specific sample item."""
+
+    __tablename__ = "control_test_exceptions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    test_id: Mapped[str] = mapped_column(ForeignKey("control_tests.id"), nullable=False)
+    sample_item_id: Mapped[str | None] = mapped_column(
+        ForeignKey("control_test_sample_items.id"), nullable=True
+    )
+    description: Mapped[str] = mapped_column(Text, default="")
+
+
+class ControlTestEvidenceArtifact(Base):
+    """Projection: which EvidenceArtifactVersion rows are linked to which
+    ControlTest, populated by the "ControlTestEvidenceLinked" projector.
+    Mirrors ControlOccurrenceEvidenceArtifact exactly."""
+
+    __tablename__ = "control_test_evidence_artifacts"
+    __table_args__ = (
+        UniqueConstraint("test_id", "evidence_artifact_version_id", name="uq_test_evidence_artifact"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    test_id: Mapped[str] = mapped_column(ForeignKey("control_tests.id"), nullable=False)
+    evidence_artifact_version_id: Mapped[str] = mapped_column(
+        ForeignKey("evidence_artifact_versions.id"), nullable=False
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+
+FINDING_SEVERITIES = ("low", "medium", "high", "critical")
+FINDING_STATUSES = ("open", "remediating", "retesting", "closed")
+FINDING_CLOSURE_DECISIONS = ("remediated_and_retested", "risk_accepted", "false_positive", "other")
+
+
+class Finding(Base):
+    """Canonical projection over the "finding" DomainEvent aggregate (issue
+    #13) — NOT the source of truth for history.
+
+    Deliberately un-prefixed (not "ControlFinding"): a finding can arise
+    from a ControlTest (`source_test_id` set) or be opened directly (e.g. a
+    manual auditor observation), and stays reusable by non-control-test
+    origins (ISO internal audit) per the issue's explicit reuse
+    instruction. Full lifecycle (open/remediation-update/retest/close) is
+    event-sourced, matching PolicyVersion's precedent for a rich state
+    machine whose history must survive later transitions — closing a
+    finding appends an event; it never rewrites the original
+    "FindingOpened" payload.
+    """
+
+    __tablename__ = "findings"
+    __table_args__ = (
+        CheckConstraint(f"severity IN {FINDING_SEVERITIES}", name="ck_finding_severity"),
+        CheckConstraint(f"status IN {FINDING_STATUSES}", name="ck_finding_status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # == aggregate_id; no default=new_id
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
+    control_id: Mapped[str | None] = mapped_column(ForeignKey("internal_controls.id"), nullable=True)
+    source_test_id: Mapped[str | None] = mapped_column(ForeignKey("control_tests.id"), nullable=True)
+    owner_person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
+    due_date: Mapped[datetime.date | None] = mapped_column(nullable=True)
+    closure_decision: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    closure_note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class FindingRemediationUpdate(Base):
+    """One append-only remediation-progress note on a Finding, populated by
+    the "FindingRemediationUpdateRecorded" projector. Same shape as the
+    existing RequirementNote thread pattern, scoped to Finding instead."""
+
+    __tablename__ = "finding_remediation_updates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    finding_id: Mapped[str] = mapped_column(ForeignKey("findings.id"), nullable=False)
+    note: Mapped[str] = mapped_column(Text, default="")
+    actor: Mapped[str] = mapped_column(String(255), nullable=False)
+    linked_evidence_artifact_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("evidence_artifact_versions.id"), nullable=True
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class FindingRetest(Base):
+    """Links a Finding to the ControlTest that retested it, populated by
+    the "FindingRetestRecorded" projector."""
+
+    __tablename__ = "finding_retests"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    finding_id: Mapped[str] = mapped_column(ForeignKey("findings.id"), nullable=False)
+    test_id: Mapped[str] = mapped_column(ForeignKey("control_tests.id"), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+
 APPLICABILITY_VALUES = ("yes", "no")
 IMPLEMENTATION_STATES = ("not_started", "in_progress", "implemented")
 

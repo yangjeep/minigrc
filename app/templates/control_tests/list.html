@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}Control tests · minigrc{% endblock %}
+{% block content %}
+{{ page_header("Control tests") }}
+<p><a class="btn btn-primary" href="/control-tests/new">Record a test</a></p>
+<table class="table">
+  <thead><tr><th>Control</th><th>Performed at</th><th>Result</th><th>Retest of</th></tr></thead>
+  <tbody>
+    {% for test in tests %}
+    <tr>
+      <td><a href="/control-tests/{{ test.id }}">{{ test.control_id }}</a></td>
+      <td>{{ test.performed_at }}</td>
+      <td><span class="badge {{ 'bg-danger' if test.result == 'exceptions_noted' else 'bg-success' }}">{{ test.result }}</span></td>
+      <td>{{ test.retest_of_test_id or "—" }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">No tests recorded yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

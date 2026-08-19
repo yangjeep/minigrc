@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}Freeze a population · minigrc{% endblock %}
+{% block content %}
+{{ page_header("Freeze a test population") }}
+<p class="text-muted">
+  A population is every occurrence of the selected control (optionally narrowed to a control
+  period), frozen right now. Later occurrences, or corrections to already-frozen ones, never
+  change this population's membership.
+</p>
+<form method="post" action="/control-tests/populations">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <div class="mb-3">
+    <label class="form-label">Control</label>
+    <select class="form-select" name="control_id" required>
+      {% for control in controls %}
+      <option value="{{ control.id }}">{{ control.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Control period (optional)</label>
+    <select class="form-select" name="control_period_id">
+      <option value="">—</option>
+      {% for period in periods %}
+      <option value="{{ period.id }}">{{ period.name }} ({{ period.starts_on }} to {{ period.ends_on }})</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Description</label>
+    <input type="text" class="form-control" name="description">
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Criteria note (how this population was scoped)</label>
+    <textarea class="form-control" name="criteria_note"></textarea>
+  </div>
+  <button type="submit" class="btn btn-primary">Freeze population</button>
+</form>
+{% endblock %}

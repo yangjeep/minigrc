@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}Record a control test · minigrc{% endblock %}
+{% block content %}
+{{ page_header("Record a control test") }}
+<form method="post" action="/control-tests">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <div class="mb-3">
+    <label class="form-label">Control</label>
+    <select class="form-select" name="control_id" required>
+      {% for control in controls %}
+      <option value="{{ control.id }}">{{ control.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Control period (optional)</label>
+    <select class="form-select" name="control_period_id">
+      <option value="">—</option>
+      {% for period in periods %}
+      <option value="{{ period.id }}">{{ period.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Sample (optional — leave blank for a direct-observation test)</label>
+    <select class="form-select" name="sample_id">
+      <option value="">—</option>
+      {% for sample in samples %}
+      <option value="{{ sample.id }}" {% if sample.id == selected_sample_id %}selected{% endif %}>
+        {{ sample.selection_method }} ({{ sample.items|length }} item(s))
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Procedure description</label>
+    <textarea class="form-control" name="procedure_description" required></textarea>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Tester</label>
+    <select class="form-select" name="tester_person_id" required>
+      {% for person in people %}
+      <option value="{{ person.id }}">{{ person.display_name or person.email }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Performed on</label>
+    <input type="date" class="form-control" name="performed_on" required>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Result</label>
+    <select class="form-select" name="result" required>
+      {% for result in results %}
+      <option value="{{ result }}">{{ result }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Exceptions (one per line — only used when result is exceptions_noted)</label>
+    <textarea class="form-control" name="exception_lines"></textarea>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Notes</label>
+    <textarea class="form-control" name="notes"></textarea>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Retest of test id (optional)</label>
+    <input type="text" class="form-control" name="retest_of_test_id">
+  </div>
+  <button type="submit" class="btn btn-primary">Record test</button>
+</form>
+{% endblock %}

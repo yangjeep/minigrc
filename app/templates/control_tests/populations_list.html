@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}Test populations · minigrc{% endblock %}
+{% block content %}
+{{ page_header("Test populations") }}
+<p><a class="btn btn-primary" href="/control-tests/populations/new">Freeze a new population</a></p>
+<table class="table">
+  <thead><tr><th>Control</th><th>Description</th><th>Items</th><th>Frozen at</th></tr></thead>
+  <tbody>
+    {% for population in populations %}
+    <tr>
+      <td><a href="/control-tests/populations/{{ population.id }}">{{ population.control_id }}</a></td>
+      <td>{{ population.description or "—" }}</td>
+      <td>{{ population.items|length }}</td>
+      <td>{{ population.frozen_at }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">No populations frozen yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

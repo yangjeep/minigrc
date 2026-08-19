@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}Findings · minigrc{% endblock %}
+{% block content %}
+{{ page_header("Findings") }}
+<p><a class="btn btn-primary" href="/findings/new">Open a finding</a></p>
+<table class="table">
+  <thead><tr><th>Title</th><th>Severity</th><th>Status</th><th>Due</th></tr></thead>
+  <tbody>
+    {% for finding in findings %}
+    <tr>
+      <td><a href="/findings/{{ finding.id }}">{{ finding.title }}</a></td>
+      <td>{{ finding.severity }}</td>
+      <td><span class="badge badge-{{ finding.status }}">{{ finding.status }}</span></td>
+      <td>{{ finding.due_date or "—" }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">No findings yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
