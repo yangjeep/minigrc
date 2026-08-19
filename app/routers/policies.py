@@ -6,6 +6,7 @@ import os
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
@@ -20,7 +21,20 @@ from app.google_drive import (
     parse_drive_file_id,
 )
 from app.google_drive_approvals import ApprovalsUnavailableError, fetch_approvals, parse_approval
-from app.models import POLICY_STATUSES, Policy, PolicyApprovalSnapshot, PolicyVersion
+from app.models import (
+    POLICY_STATUSES,
+    InternalControl,
+    Policy,
+    PolicyApprovalSnapshot,
+    PolicyControlMapping,
+    PolicyVersion,
+)
+from app.policy_lifecycle import (
+    make_version_effective,
+    review_version,
+    submit_for_review,
+    withdraw_version,
+)
 from app.routers.google_drive import get_access_token_for_active_connection
 from app.storage import (
     UploadValidationError,
@@ -161,11 +175,21 @@ def view_policy(policy_id: str, request: Request, db: Session = Depends(get_db))
         reverse=True,
     )
 
+    mapped_control_ids = {m.control_id for m in policy.control_mappings}
+    available_controls = db.scalars(
+        select(InternalControl).where(InternalControl.id.not_in(mapped_control_ids or [""]))
+    ).all()
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
         request,
         "policies/detail.html",
-        {"policy": policy, "statuses": POLICY_STATUSES, "approval_snapshots": approval_snapshots},
+        {
+            "policy": policy,
+            "statuses": POLICY_STATUSES,
+            "approval_snapshots": approval_snapshots,
+            "available_controls": available_controls,
+        },
     )
 
 
@@ -275,6 +299,20 @@ def retire_policy(
         raise HTTPException(status_code=404, detail="Policy not found")
 
     policy.status = "retired"
+    # issue #31: a retired policy must not keep claiming a version as its
+    # current operative document — withdraw the effective version (if
+    # any) in the same transaction, closing a real auditor-facing
+    # inconsistency that existed before the version lifecycle existed.
+    effective_version = policy.effective_version
+    if effective_version is not None:
+        withdraw_version(
+            db,
+            effective_version,
+            reason="Policy retired",
+            actor_type="user",
+            actor_id=request.state.user.id,
+        )
+
     record_audit_event(
         db,
         entity_type="policy",
@@ -284,6 +322,174 @@ def retire_policy(
         actor=request.state.user.email,
     )
     return redirect_with_flash(f"/policies/{policy_id}", "Policy retired.")
+
+
+@router.post("/{policy_id}/versions/{version_id}/submit-for-review")
+def submit_version_for_review(
+    policy_id: str,
+    version_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(require_write_access),
+    _csrf: None = Depends(verify_csrf),
+):
+    version = db.get(PolicyVersion, version_id)
+    if version is None or version.policy_id != policy_id:
+        raise HTTPException(status_code=404, detail="Policy version not found")
+
+    detail_url = f"/policies/{policy_id}"
+    try:
+        submit_for_review(db, version, actor_type="user", actor_id=user.id)
+    except ValueError as exc:
+        return redirect_with_flash(detail_url, str(exc), kind="error")
+
+    record_audit_event(
+        db,
+        entity_type="policy_version",
+        entity_id=version.id,
+        action="submit_for_review",
+        detail=f"Submitted v{version.version_number} of '{version.policy.title}' for review",
+        actor=request.state.user.email,
+    )
+    return redirect_with_flash(detail_url, f"Version {version.version_number} submitted for review.")
+
+
+@router.post("/{policy_id}/versions/{version_id}/review")
+def review_policy_version(
+    policy_id: str,
+    version_id: str,
+    request: Request,
+    decision: str = Form(...),
+    comment: str = Form(""),
+    db: Session = Depends(get_db),
+    user=Depends(require_write_access),
+    _csrf: None = Depends(verify_csrf),
+):
+    version = db.get(PolicyVersion, version_id)
+    if version is None or version.policy_id != policy_id:
+        raise HTTPException(status_code=404, detail="Policy version not found")
+
+    detail_url = f"/policies/{policy_id}"
+    try:
+        review_version(db, version, decision=decision, comment=comment, actor_type="user", actor_id=user.id)
+    except ValueError as exc:
+        return redirect_with_flash(detail_url, str(exc), kind="error")
+
+    record_audit_event(
+        db,
+        entity_type="policy_version",
+        entity_id=version.id,
+        action="review",
+        detail=f"Reviewed v{version.version_number} of '{version.policy.title}': {decision} ({comment})",
+        actor=request.state.user.email,
+    )
+    return redirect_with_flash(detail_url, f"Version {version.version_number} {decision}.")
+
+
+@router.post("/{policy_id}/versions/{version_id}/make-effective")
+def make_policy_version_effective(
+    policy_id: str,
+    version_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(require_write_access),
+    _csrf: None = Depends(verify_csrf),
+):
+    version = db.get(PolicyVersion, version_id)
+    if version is None or version.policy_id != policy_id:
+        raise HTTPException(status_code=404, detail="Policy version not found")
+
+    detail_url = f"/policies/{policy_id}"
+    try:
+        make_version_effective(db, version, actor_type="user", actor_id=user.id)
+    except ValueError as exc:
+        return redirect_with_flash(detail_url, str(exc), kind="error")
+    except IntegrityError:
+        # uq_policy_version_one_effective_per_policy fired — a
+        # concurrent request already made a different version of this
+        # policy effective between our read and this flush (see
+        # make_version_effective's docstring). Fail cleanly, not a 500.
+        db.rollback()
+        return redirect_with_flash(
+            detail_url,
+            "Another version of this policy just became effective. Refresh and try again.",
+            kind="error",
+        )
+
+    record_audit_event(
+        db,
+        entity_type="policy_version",
+        entity_id=version.id,
+        action="make_effective",
+        detail=f"Made v{version.version_number} of '{version.policy.title}' effective",
+        actor=request.state.user.email,
+    )
+    return redirect_with_flash(detail_url, f"Version {version.version_number} is now effective.")
+
+
+@router.post("/{policy_id}/versions/{version_id}/withdraw")
+def withdraw_policy_version(
+    policy_id: str,
+    version_id: str,
+    request: Request,
+    reason: str = Form(""),
+    db: Session = Depends(get_db),
+    user=Depends(require_write_access),
+    _csrf: None = Depends(verify_csrf),
+):
+    version = db.get(PolicyVersion, version_id)
+    if version is None or version.policy_id != policy_id:
+        raise HTTPException(status_code=404, detail="Policy version not found")
+
+    detail_url = f"/policies/{policy_id}"
+    try:
+        withdraw_version(db, version, reason=reason, actor_type="user", actor_id=user.id)
+    except ValueError as exc:
+        return redirect_with_flash(detail_url, str(exc), kind="error")
+
+    record_audit_event(
+        db,
+        entity_type="policy_version",
+        entity_id=version.id,
+        action="withdraw",
+        detail=f"Withdrew v{version.version_number} of '{version.policy.title}': {reason}",
+        actor=request.state.user.email,
+    )
+    return redirect_with_flash(detail_url, f"Version {version.version_number} withdrawn.")
+
+
+@router.post("/{policy_id}/control-mappings")
+def add_control_mapping(
+    policy_id: str,
+    request: Request,
+    control_id: str = Form(...),
+    db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
+    _csrf: None = Depends(verify_csrf),
+):
+    policy = db.get(Policy, policy_id)
+    control = db.get(InternalControl, control_id)
+    if policy is None or control is None:
+        raise HTTPException(status_code=404, detail="Policy or control not found")
+
+    db.add(PolicyControlMapping(policy_id=policy.id, control_id=control.id))
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        return redirect_with_flash(
+            f"/policies/{policy_id}", "That control is already mapped to this policy.", kind="error"
+        )
+
+    record_audit_event(
+        db,
+        entity_type="policy",
+        entity_id=policy.id,
+        action="map_control",
+        detail=f"Mapped policy '{policy.title}' to control '{control.name}'",
+        actor=request.state.user.email,
+    )
+    return redirect_with_flash(f"/policies/{policy_id}", "Control mapped.")
 
 
 @router.get("/{policy_id}/versions/{version_id}/download")
