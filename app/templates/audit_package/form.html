@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}Audit/PBC package · minigrc{% endblock %}
+{% block content %}
+{{ page_header("Audit / PBC package export") }}
+
+{% if scope is none %}
+<p>No compliance scope has been defined yet. <a href="/onboarding/scope">Define scope</a> before exporting a package.</p>
+{% elif not scope.audit_period_starts_on or not scope.audit_period_ends_on %}
+<p>The compliance scope has no audit period set. <a href="/onboarding/scope">Review scope</a> to set one before exporting a package.</p>
+{% else %}
+<dl>
+  <dt>Audit period</dt><dd>{{ scope.audit_period_starts_on }} to {{ scope.audit_period_ends_on }}</dd>
+  <dt>Service description</dt><dd>{{ scope.service_description or "—" }}</dd>
+</dl>
+<p class="text-muted">
+  The package bundles scope/program metadata, in-scope frameworks and controls, occurrences,
+  control tests, findings, evidence artifacts (with hashes), and the policy versions that were
+  effective during this period — with a manifest listing every included file's SHA-256 for
+  independent verification. It is a factual export, not an auditor's opinion or certification.
+</p>
+<form method="post" action="/admin/audit-package">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit" class="btn btn-primary">Generate and download package</button>
+</form>
+{% endif %}
+{% endblock %}

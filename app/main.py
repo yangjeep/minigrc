@@ -29,6 +29,7 @@ from app.routers import (
     admin_jobs,
     admin_users,
     audit_log,
+    audit_package,
     auth,
     aws_connector,
     connections,
@@ -85,6 +86,7 @@ ADMIN_NAV_ITEMS: list[tuple[str, str]] = [
     ("Authentication", "/admin/authentication/google"),
     ("Jobs", "/admin/jobs"),
     ("Audit Log", "/admin/audit-log"),
+    ("Audit Package", "/admin/audit-package"),
 ]
 
 CSRF_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
@@ -206,6 +208,7 @@ def create_app(
     app.include_router(trust_center_public.router)
     app.include_router(audit_log.router)
     app.include_router(audit_log.legacy_router)
+    app.include_router(audit_package.router)
     app.include_router(admin.router)
     app.include_router(admin_users.router)
     app.include_router(admin_users.users_register_router)
