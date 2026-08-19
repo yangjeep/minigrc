@@ -63,11 +63,16 @@ def test_stage_progresses_and_regresses_with_real_state(uat_server, uat_client):
     # Generate starter controls, then assign owners to every control that
     # still needs one (the register grid, same as tests/test_register_api.py).
     checklist = client.get("/onboarding")
-    client.post(
+    generate_response = client.post(
         "/onboarding/generate-starter-controls",
         data={"csrf_token": extract_csrf_field(checklist.text)},
         follow_redirects=False,
     )
+    # Asserted explicitly (issue #72): a silent failure here would only
+    # surface two steps downstream as a confusing stage mismatch instead
+    # of pinpointing the actual failing action.
+    assert generate_response.status_code == 303
+    assert "flash_kind=error" not in generate_response.headers["location"]
     with session_factory() as session:
         for control in session.scalars(select(InternalControl)).all():
             if not control.owner and control.owner_person_id is None:
