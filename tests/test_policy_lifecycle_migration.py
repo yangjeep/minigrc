@@ -25,7 +25,7 @@ _PRE_MIGRATION_REVISION = "96edf74d9219"
 _INSERT_POLICY_SQL = """
     INSERT INTO policies
         (id, title, description, owner, status, archived, created_at, updated_at, source_type)
-    VALUES (:id, :title, '', '', :status, 0, :now, :now, 'manual')
+    VALUES (:id, :title, '', '', :status, false, :now, :now, 'manual')
 """
 _INSERT_VERSION_SQL = """
     INSERT INTO policy_versions
