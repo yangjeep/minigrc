@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ artifact.title }} · minigrc{% endblock %}
+{% block content %}
+<p><a href="/evidence-artifacts">&larr; Evidence Artifacts</a></p>
+<h1>{{ artifact.title }}</h1>
+<p class="lede">{{ artifact.description }}</p>
+
+{% if not configured %}
+<div class="flash flash-error" role="status">
+  The evidence artifact repository is not configured — capture/upload/download are unavailable.
+</div>
+{% endif %}
+
+<h2>Versions</h2>
+<table>
+  <thead>
+    <tr><th>Version</th><th>File</th><th>Source</th><th>Size</th><th>Captured</th><th>SHA-256</th><th>Link to occurrence</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for version in artifact.versions %}
+    <tr>
+      <td>v{{ version.version_number }}</td>
+      <td>{{ version.original_filename }}</td>
+      <td>{{ version.source_type }}{% if version.source_revision_id %} (rev {{ version.source_revision_id[:8] }}…){% endif %}</td>
+      <td>{{ (version.byte_size / 1024) | round(1) }} KB</td>
+      <td>{{ version.captured_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+      <td><code>{{ version.sha256[:16] }}…</code></td>
+      <td>
+        <form method="post" action="/evidence-artifacts/{{ artifact.id }}/versions/{{ version.id }}/link-occurrence" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+          <select name="occurrence_id" required>
+            {% for occurrence in occurrences %}
+            <option value="{{ occurrence.id }}">{{ occurrence.id[:8] }}… (control {{ occurrence.control_id[:8] }}…)</option>
+            {% endfor %}
+          </select>
+          <button type="submit">Link</button>
+        </form>
+      </td>
+      <td><a href="/evidence-artifacts/{{ artifact.id }}/versions/{{ version.id }}/download">Download</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8">No versions captured yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if configured %}
+<h2>Capture new version</h2>
+<form method="post" action="/evidence-artifacts/{{ artifact.id }}/versions" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>File <input type="file" name="file" required></label>
+  <button type="submit">Capture version</button>
+</form>
+{% endif %}
+{% endblock %}

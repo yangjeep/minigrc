@@ -330,6 +330,35 @@ class ControlOccurrenceEvidence(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class ControlOccurrenceEvidenceArtifact(Base):
+    """Projection: which EvidenceArtifactVersion rows are linked to which
+    occurrence, populated by the "ControlOccurrenceEvidenceArtifactLinked"
+    projector — not written directly by routes.
+
+    The general evidence-upload counterpart
+    ControlOccurrenceEvidence's own docstring anticipated (issue #32) —
+    a separate table for the same reason: EvidenceControlMapping-style
+    widening would silently weaken an existing uniqueness guarantee for
+    all-NULL-occurrence rows (see that docstring). Mirrors
+    ControlOccurrenceEvidence exactly, just against
+    EvidenceArtifactVersion instead of EvidenceSnapshot.
+    """
+
+    __tablename__ = "control_occurrence_evidence_artifacts"
+    __table_args__ = (
+        UniqueConstraint(
+            "occurrence_id", "evidence_artifact_version_id", name="uq_occurrence_evidence_artifact"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    occurrence_id: Mapped[str] = mapped_column(ForeignKey("control_occurrences.id"), nullable=False)
+    evidence_artifact_version_id: Mapped[str] = mapped_column(
+        ForeignKey("evidence_artifact_versions.id"), nullable=False
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+
 APPLICABILITY_VALUES = ("yes", "no")
 IMPLEMENTATION_STATES = ("not_started", "in_progress", "implemented")
 
@@ -1021,6 +1050,91 @@ class EvidenceControlMapping(Base):
 
     evidence_snapshot: Mapped[EvidenceSnapshot] = relationship(back_populates="control_mappings")
     control: Mapped[InternalControl] = relationship()
+
+
+class EvidenceArtifact(Base):
+    """A logical, durable evidence artifact miniGRC owns independent of
+    any external source (issue #32) — the container for its immutable
+    captured versions. A plain row, not event-sourced (same category as
+    Policy itself); the material fact is each captured version, not the
+    container's own existence.
+
+    Complementary to, not a replacement for, EvidenceSnapshot: that
+    table answers "what did a connector observe" (a bytes-free
+    normalized fact); this answers "here is the actual durable file
+    that constitutes evidence." A connector capturing a real file may
+    populate both for the same collection run (see
+    EvidenceArtifactVersion.linked_evidence_snapshot_id), but neither
+    requires the other to exist.
+    """
+
+    __tablename__ = "evidence_artifacts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    versions: Mapped[list[EvidenceArtifactVersion]] = relationship(
+        back_populates="artifact",
+        cascade="all, delete-orphan",
+        order_by="EvidenceArtifactVersion.version_number.desc()",
+    )
+
+    @property
+    def latest_version(self) -> EvidenceArtifactVersion | None:
+        return self.versions[0] if self.versions else None
+
+
+EVIDENCE_ARTIFACT_SOURCE_TYPES = ("manual", "connector")
+
+
+class EvidenceArtifactVersion(Base):
+    """One immutable captured version of an EvidenceArtifact — a
+    canonical projection over the "evidence_artifact_version"
+    DomainEvent aggregate (app/events.py), never written to directly
+    outside app/evidence_repository.py's projector. Unlike
+    PolicyVersion (#31), the row's own existence is event-sourced too,
+    not just its workflow status — this is a brand-new table with no
+    pre-existing rows to preserve, so there is no reason to keep it a
+    plain insert (see design doc §2).
+
+    `object_key` is entirely server-generated
+    (`evidence/<artifact_id>/<version_id>/...`) — the original filename
+    is kept only for display/Content-Disposition on download, never as
+    a path/key component (mirrors app/storage.py's
+    sanitize_original_filename precedent).
+    """
+
+    __tablename__ = "evidence_artifact_versions"
+    __table_args__ = (UniqueConstraint("artifact_id", "version_number", name="uq_evidence_artifact_version"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # == aggregate_id; no default=new_id
+    artifact_id: Mapped[str] = mapped_column(ForeignKey("evidence_artifacts.id"), nullable=False)
+    version_number: Mapped[int] = mapped_column(nullable=False)
+
+    object_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    media_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    byte_size: Mapped[int] = mapped_column(nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    source_type: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
+    source_connection_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_object_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_revision_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_modified_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    linked_evidence_snapshot_id: Mapped[str | None] = mapped_column(
+        ForeignKey("evidence_snapshots.id"), nullable=True
+    )
+
+    captured_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(30), nullable=False, default="system")
+    actor_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    artifact: Mapped[EvidenceArtifact] = relationship(back_populates="versions")
+    linked_evidence_snapshot: Mapped[EvidenceSnapshot | None] = relationship()
 
 
 SECRET_KINDS = ("encrypted", "env_ref")

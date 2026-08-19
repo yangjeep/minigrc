@@ -56,6 +56,19 @@ class Settings(BaseSettings):
 
     encryption_key: str = ""
 
+    # S3-compatible evidence artifact repository (issue #32) — plain,
+    # operator-set deployment configuration (same category as
+    # DATABASE_URL), not a runtime-configurable/DB-stored Connection row
+    # like the AWS/Drive connectors. `s3_endpoint_url` is trusted
+    # deployment config, not per-request attacker input — see
+    # docs/superpowers/specs/2026-08-19-issue32-evidence-repository-design.md
+    # §5 for the SSRF-boundary reasoning.
+    s3_endpoint_url: str = ""
+    s3_bucket: str = ""
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+    s3_region: str = "us-east-1"
+
     @property
     def resolved_database_path(self) -> str:
         return self.database_path or f"{self.data_dir.rstrip('/')}/grc.db"
@@ -93,6 +106,12 @@ class Settings(BaseSettings):
     @property
     def google_drive_redirect_uri(self) -> str:
         return f"{self.public_base_url.rstrip('/')}/connectors/google-drive/callback"
+
+    @property
+    def evidence_repository_configured(self) -> bool:
+        return bool(
+            self.s3_endpoint_url and self.s3_bucket and self.s3_access_key_id and self.s3_secret_access_key
+        )
 
 
 @lru_cache
