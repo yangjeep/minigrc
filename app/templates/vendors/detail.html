@@ -16,6 +16,7 @@
   <dt>Status</dt><dd><span class="badge badge-{{ vendor.lifecycle_status }}">{{ vendor.lifecycle_status }}</span></dd>
   <dt>Department</dt><dd>{{ vendor.primary_department or "—" }}</dd>
   <dt>Business owner</dt><dd>{{ (vendor.business_owner.display_name or vendor.business_owner.email) if vendor.business_owner else "—" }}</dd>
+  <dt>In compliance scope</dt><dd>{{ "Yes" if vendor.in_scope else "No" }}</dd>
   <dt>Access URL</dt><dd>{% if vendor.access_url %}<a href="{{ vendor.access_url }}">{{ vendor.access_url }}</a>{% else %}—{% endif %}</dd>
   <dt>Admin console</dt><dd>{% if vendor.admin_console_url %}<a href="{{ vendor.admin_console_url }}">{{ vendor.admin_console_url }}</a>{% else %}—{% endif %}</dd>
 

@@ -157,6 +157,7 @@ def _extract_vendor_fields(form: dict) -> dict:
         "admin_console_url": form.get("admin_console_url", "").strip() or None,
         "primary_department": form.get("primary_department", "").strip(),
         "business_owner_person_id": form.get("business_owner_person_id") or None,
+        "in_scope": form.get("in_scope") == "on",
         "uses_shared_login": form.get("uses_shared_login") == "on",
         "shared_credential_reference_url": form.get("shared_credential_reference_url", "").strip() or None,
         "primary_admin_person_id": form.get("primary_admin_person_id") or None,

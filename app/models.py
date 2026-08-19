@@ -442,6 +442,55 @@ class Risk(Base):
 RISK_STATUSES = ("open", "mitigating", "accepted", "closed")
 
 
+TRUST_SERVICE_CATEGORIES = ("security", "availability", "confidentiality", "processing_integrity", "privacy")
+
+
+class ComplianceScope(Base):
+    """The org's current declared compliance-program scope (issue #30).
+
+    Singleton per deployment (one org per deployment, RULES.md §1.11) — one
+    row, fully event-sourced (`aggregate_type="compliance_scope"`): this row
+    IS the current-state projection, updated in place by
+    `ComplianceScopeDefined`/`ComplianceScopeRevised` events, the same shape
+    `ControlOccurrence` uses (one long-lived aggregate whose projection is
+    mutated by each event) rather than `EvidenceArtifactVersion`'s
+    "every change is a new browsable row" shape — nothing here asks a user
+    to browse distinct past scope versions (that is #45's future job); it
+    only needs the change history to exist and be reconstructable from the
+    event log, which an append-only log already gives for free. See
+    docs/superpowers/specs/2026-08-19-issue30-compliance-scope-onboarding-
+    design.md §2.5 for the full reasoning.
+
+    `id` deliberately has no `default=new_id` — matches the event-sourced-
+    aggregate-id convention (`ControlOccurrence`): the domain layer
+    generates it once, on first definition, not the ORM.
+
+    `trust_service_categories` is a comma-separated subset of
+    TRUST_SERVICE_CATEGORIES; "security" is always included (mandatory in
+    every SOC 2 report) — enforced by `app/compliance_scope.py`, never
+    trusted from caller input alone. Deliberately not a separate join
+    table: SOC 2's category list is fixed and small, and this is
+    framework-neutral storage for a fact that is currently only meaningful
+    under SOC 2 (see design doc §2.2 for why it isn't used to filter
+    starter-control generation yet).
+    """
+
+    __tablename__ = "compliance_scopes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # == aggregate_id; no default=new_id
+    service_description: Mapped[str] = mapped_column(Text, default="")
+    trust_service_categories: Mapped[str] = mapped_column(String(255), default="security")
+    audit_period_starts_on: Mapped[datetime.date | None] = mapped_column(nullable=True)
+    audit_period_ends_on: Mapped[datetime.date | None] = mapped_column(nullable=True)
+    data_categories: Mapped[str] = mapped_column(Text, default="")
+    locations: Mapped[str] = mapped_column(Text, default="")
+    exclusions: Mapped[str] = mapped_column(Text, default="")
+    exclusions_rationale: Mapped[str] = mapped_column(Text, default="")
+    revision: Mapped[int] = mapped_column(default=1)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 EMPLOYMENT_STATUSES = ("active", "suspended", "departed", "unknown")
 PERSON_SOURCES = ("manual", "google_workspace", "csv")
 
@@ -467,6 +516,12 @@ class Person(Base):
     source: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
     external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     last_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    # Issue #30: whether this person is currently declared in the compliance
+    # program's scope. An ordinary mutable register field, not a separately
+    # event-sourced fact — see docs/superpowers/specs/2026-08-19-issue30-
+    # compliance-scope-onboarding-design.md §2.4 for why (every existing edit
+    # route for this model already calls record_audit_event on update).
+    in_scope: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
@@ -506,6 +561,8 @@ class VendorSystem(Base):
     admin_console_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     primary_department: Mapped[str] = mapped_column(String(255), default="")
     business_owner_person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
+    # Issue #30: see Person.in_scope above — same rationale, same convention.
+    in_scope: Mapped[bool] = mapped_column(default=False)
 
     # Access continuity
     uses_shared_login: Mapped[bool] = mapped_column(default=False)

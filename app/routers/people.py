@@ -151,6 +151,7 @@ def update_person(
     request: Request,
     display_name: str = Form(""),
     employment_status: str = Form("unknown"),
+    in_scope: bool = Form(False),
     db: Session = Depends(get_db),
     _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
@@ -162,10 +163,19 @@ def update_person(
     if employment_status not in EMPLOYMENT_STATUSES:
         return redirect_with_flash(f"/people/{person_id}", "Invalid employment status.", kind="error")
 
-    before = {"display_name": person.display_name, "employment_status": person.employment_status}
+    before = {
+        "display_name": person.display_name,
+        "employment_status": person.employment_status,
+        "in_scope": person.in_scope,
+    }
     person.display_name = display_name.strip()
     person.employment_status = employment_status
-    after = {"display_name": person.display_name, "employment_status": person.employment_status}
+    person.in_scope = in_scope
+    after = {
+        "display_name": person.display_name,
+        "employment_status": person.employment_status,
+        "in_scope": person.in_scope,
+    }
 
     record_audit_event(
         db,

@@ -41,6 +41,7 @@ from app.routers import (
     google_drive,
     google_oidc,
     occurrences,
+    onboarding,
     people,
     placeholders,
     policies,
@@ -58,6 +59,7 @@ APP_DIR = Path(__file__).resolve().parent
 
 NAV_ITEMS = [
     ("Dashboard", "/"),
+    ("Onboarding", "/onboarding"),
     ("Frameworks", "/frameworks"),
     ("Controls", "/controls"),
     ("Control Periods", "/control-periods"),
@@ -175,6 +177,7 @@ def create_app(
     app.include_router(auth.router)
     app.include_router(google_oidc.router)
     app.include_router(dashboard.router)
+    app.include_router(onboarding.router)
     app.include_router(frameworks.router)
     app.include_router(frameworks.requirements_register_router)
     app.include_router(controls.router)

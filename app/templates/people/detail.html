@@ -8,6 +8,7 @@
   <dt>Source</dt><dd>{{ person.source }}</dd>
   <dt>External ID</dt><dd>{{ person.external_id or "—" }}</dd>
   <dt>Last synced</dt><dd>{{ person.last_synced_at or "Never (manual record)" }}</dd>
+  <dt>In compliance scope</dt><dd>{{ "Yes" if person.in_scope else "No" }}</dd>
 </dl>
 
 <h2>Edit</h2>
@@ -21,6 +22,7 @@
       {% endfor %}
     </select>
   </label>
+  <label><input type="checkbox" name="in_scope" value="true" {% if person.in_scope %}checked{% endif %}> In compliance scope</label>
   <button type="submit">Save</button>
 </form>
 {% endblock %}
