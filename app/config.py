@@ -43,6 +43,16 @@ class Settings(BaseSettings):
     google_oidc_client_secret: str = ""
     google_oidc_allowed_domains: str = ""
 
+    # Generic, provider-neutral OIDC login (issue #17) — coexists with the
+    # Google-specific flow above; discovery-driven via `oidc_issuer`, so
+    # it works with Authentik/Keycloak/Okta/Entra/etc. without
+    # provider-specific code. See app/oidc.py, app/oidc_config.py.
+    oidc_issuer: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_allowed_domains: str = ""
+    oidc_display_name: str = "SSO"
+
     # OAuth for the org-level Drive connection stays distinct from OIDC
     # login above, even if an operator points both at the same Google
     # Cloud project's client credentials.
@@ -93,6 +103,20 @@ class Settings(BaseSettings):
     @property
     def google_oidc_redirect_uri(self) -> str:
         return f"{self.public_base_url.rstrip('/')}/auth/google/callback"
+
+    @property
+    def oidc_allowed_domains_set(self) -> set[str]:
+        return {d.strip().lower() for d in self.oidc_allowed_domains.split(",") if d.strip()}
+
+    @property
+    def oidc_enabled(self) -> bool:
+        return bool(
+            self.oidc_issuer and self.oidc_client_id and self.oidc_client_secret and self.public_base_url
+        )
+
+    @property
+    def oidc_redirect_uri(self) -> str:
+        return f"{self.public_base_url.rstrip('/')}/auth/oidc/callback"
 
     @property
     def google_drive_configured(self) -> bool:

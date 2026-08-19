@@ -22,6 +22,7 @@ dependencies = [
     "pymysql>=1.1",
     "markdown>=3.7",
     "nh3>=0.2",
+    "joserfc>=1.0",
 ]
 
 [project.optional-dependencies]

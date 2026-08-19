@@ -44,6 +44,7 @@ from app.routers import (
     google_drive,
     google_oidc,
     occurrences,
+    oidc,
     onboarding,
     people,
     placeholders,
@@ -182,6 +183,7 @@ def create_app(
 
     app.include_router(auth.router)
     app.include_router(google_oidc.router)
+    app.include_router(oidc.router)
     app.include_router(dashboard.router)
     app.include_router(onboarding.router)
     app.include_router(frameworks.router)

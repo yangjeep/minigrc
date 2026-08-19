@@ -18,7 +18,8 @@ from app.audit import record_audit_event
 from app.deps import get_db, require_admin, verify_csrf
 from app.flash import redirect_with_flash
 from app.google_oidc_config import resolve_google_oidc_config
-from app.models import GoogleOidcSettings, User, new_id
+from app.models import GoogleOidcSettings, OidcProviderSettings, User, new_id
+from app.oidc_config import resolve_oidc_config
 from app.secrets import create_encrypted_secret
 
 router = APIRouter(prefix="/admin/authentication", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -116,3 +117,99 @@ def update_google_settings(
         actor=admin.email,
     )
     return redirect_with_flash("/admin/authentication/google", "Google OAuth settings saved.")
+
+
+def _current_oidc_row(db: Session) -> OidcProviderSettings | None:
+    return db.scalar(select(OidcProviderSettings).order_by(OidcProviderSettings.updated_at.desc()).limit(1))
+
+
+def _oidc_not_usable_reason(
+    row: OidcProviderSettings | None, resolved, has_secret: bool, public_base_url: str
+) -> str | None:
+    if resolved.usable or row is None or not row.enabled:
+        return None
+    if not row.issuer:
+        return "Issuer URL is required."
+    if not row.client_id:
+        return "Client ID is required."
+    if not has_secret:
+        return "Client secret is required."
+    if not public_base_url:
+        return (
+            "GRC_PUBLIC_BASE_URL is not set in this deployment's environment — "
+            "required to compute the OIDC redirect URI."
+        )
+    return "Stored client secret could not be decrypted — check GRC_ENCRYPTION_KEY, then re-enter it."
+
+
+@router.get("/oidc")
+def oidc_settings_form(request: Request, db: Session = Depends(get_db)):
+    row = _current_oidc_row(db)
+    settings = request.app.state.settings
+    resolved = resolve_oidc_config(db, settings)
+    has_secret = bool(row and row.secret_id)
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request,
+        "admin/authentication/oidc.html",
+        {
+            "row": row,
+            "resolved": resolved,
+            "has_secret": has_secret,
+            "not_usable_reason": _oidc_not_usable_reason(row, resolved, has_secret, settings.public_base_url),
+        },
+    )
+
+
+@router.post("/oidc")
+def update_oidc_settings(
+    request: Request,
+    enabled: bool = Form(False),
+    display_name: str = Form("SSO"),
+    issuer: str = Form(""),
+    client_id: str = Form(""),
+    client_secret: str = Form(""),
+    allowed_domains: str = Form(""),
+    auto_provision_enabled: bool = Form(False),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+    _csrf: None = Depends(verify_csrf),
+):
+    row = _current_oidc_row(db)
+    secret_id = row.secret_id if row is not None else None
+    if client_secret.strip():
+        key = request.app.state.settings.encryption_key
+        secret = create_encrypted_secret(
+            db,
+            name=f"oidc_client_secret:{new_id()}",
+            plaintext=client_secret.strip(),
+            actor=admin.email,
+            key=key,
+        )
+        secret_id = secret.id
+
+    if row is None:
+        row = OidcProviderSettings(updated_by=admin.email)
+        db.add(row)
+
+    row.enabled = enabled
+    row.display_name = display_name.strip() or "SSO"
+    row.issuer = issuer.strip().rstrip("/")
+    row.client_id = client_id.strip()
+    row.secret_id = secret_id
+    row.allowed_domains = allowed_domains.strip()
+    row.auto_provision_enabled = auto_provision_enabled
+    row.updated_by = admin.email
+    db.flush()
+    record_audit_event(
+        db,
+        entity_type="oidc_provider_settings",
+        entity_id=row.id,
+        action="update",
+        detail=(
+            f"Set enabled={row.enabled} issuer='{row.issuer}' "
+            f"auto_provision_enabled={row.auto_provision_enabled} allowed_domains='{row.allowed_domains}'"
+        ),
+        actor=admin.email,
+    )
+    return redirect_with_flash("/admin/authentication/oidc", "Generic OIDC settings saved.")
