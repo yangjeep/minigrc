@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from urllib.parse import urlencode
 
 from fastapi import Depends, Form, HTTPException, Request
@@ -14,7 +14,18 @@ from app.models import User, UserSession
 from app.security import CSRF_COOKIE_NAME, SESSION_COOKIE_NAME, csrf_tokens_match, hash_session_token
 
 
-def get_db(request: Request) -> Iterator[Session]:
+async def get_db(request: Request) -> AsyncIterator[Session]:
+    """Async generator dependency (issue #57) — not because any DB call
+    here is actually async (the ORM session below stays fully
+    synchronous), but because FastAPI dispatches a *sync* generator
+    dependency's post-yield cleanup via a separate `run_in_threadpool`
+    call, which can queue behind other threadpool work long enough that
+    this function's `session.commit()` is still only scheduled, not yet
+    executed, by the time the response has already been sent — a real,
+    reproducible gap (see issue #57, found while investigating #55). An
+    async generator dependency's cleanup instead resumes directly on the
+    event loop with no thread hop, closing nearly all of that window.
+    """
     session_factory = request.app.state.session_factory
     session = session_factory()
     try:
