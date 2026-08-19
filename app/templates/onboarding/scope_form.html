@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}Define compliance scope · minigrc{% endblock %}
+{% block content %}
+{{ page_header("Review scope" if scope else "Define compliance scope") }}
+<form method="post" action="/onboarding/scope">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
+  <div class="mb-3">
+    <label class="form-label">Service description</label>
+    <textarea class="form-control" name="service_description">{{ scope.service_description if scope else "" }}</textarea>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Trust Services Categories</label>
+    <div>
+      {% for category in trust_service_categories %}
+      <label class="d-block">
+        <input
+          type="checkbox"
+          name="trust_service_categories"
+          value="{{ category }}"
+          {% if category in selected_categories %}checked{% endif %}
+          {% if category == "security" %}disabled{% endif %}
+        >
+        {{ category }}{% if category == "security" %} (required in every SOC 2 report){% endif %}
+      </label>
+      {% if category == "security" %}
+      <input type="hidden" name="trust_service_categories" value="security">
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="row mb-3">
+    <div class="col">
+      <label class="form-label">Audit period starts on</label>
+      <input type="date" class="form-control" name="audit_period_starts_on"
+             value="{{ scope.audit_period_starts_on if scope and scope.audit_period_starts_on else '' }}">
+    </div>
+    <div class="col">
+      <label class="form-label">Audit period ends on</label>
+      <input type="date" class="form-control" name="audit_period_ends_on"
+             value="{{ scope.audit_period_ends_on if scope and scope.audit_period_ends_on else '' }}">
+    </div>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Data categories</label>
+    <input type="text" class="form-control" name="data_categories" value="{{ scope.data_categories if scope else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Locations</label>
+    <input type="text" class="form-control" name="locations" value="{{ scope.locations if scope else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Exclusions</label>
+    <textarea class="form-control" name="exclusions">{{ scope.exclusions if scope else "" }}</textarea>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Exclusions rationale</label>
+    <textarea class="form-control" name="exclusions_rationale">{{ scope.exclusions_rationale if scope else "" }}</textarea>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Save</button>
+</form>
+{% endblock %}

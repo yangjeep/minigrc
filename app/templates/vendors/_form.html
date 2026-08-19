@@ -21,6 +21,7 @@
       {% endfor %}
     </select>
   </label>
+  <label><input type="checkbox" name="in_scope" {% if vendor and vendor.in_scope %}checked{% endif %}> In compliance scope</label>
 </fieldset>
 
 <fieldset>

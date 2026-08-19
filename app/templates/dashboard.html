@@ -5,6 +5,13 @@
 {{ page_header("Dashboard") }}
 <p class="lede">Lightweight, self-hosted ISMS/GRC tool for one organization's compliance program. Not a replacement for Vanta, Drata, Wiz, or Aikido.</p>
 
+{% if onboarding_complete_count < onboarding_total_count %}
+<div class="alert alert-info d-flex justify-content-between align-items-center" role="status">
+  <span>Onboarding: {{ onboarding_complete_count }}/{{ onboarding_total_count }} steps complete.</span>
+  <a class="btn btn-sm btn-primary" href="/onboarding">Continue setup</a>
+</div>
+{% endif %}
+
 <div class="stat-row">
   <div class="stat-card">
     <div class="stat-value">{{ framework_count }}</div>

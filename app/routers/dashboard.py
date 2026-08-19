@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.deps import get_db, require_login
 from app.models import AuditEvent, Framework, Policy, RequirementNote, Risk, User
+from app.onboarding import compute_onboarding_steps
 from app.progress import compute_progress
 
 router = APIRouter(dependencies=[Depends(require_login)])
@@ -65,6 +66,9 @@ def dashboard(request: Request, db: Session = Depends(get_db), user: User = Depe
         else []
     )
 
+    onboarding_steps = compute_onboarding_steps(db, request.app.state.settings)
+    onboarding_complete_count = sum(1 for step in onboarding_steps if step.is_complete)
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
         request,
@@ -79,5 +83,7 @@ def dashboard(request: Request, db: Session = Depends(get_db), user: User = Depe
             "policies_overdue": policies_overdue,
             "recent_notes": recent_notes,
             "recent_audit_events": recent_audit_events,
+            "onboarding_complete_count": onboarding_complete_count,
+            "onboarding_total_count": len(onboarding_steps),
         },
     )
