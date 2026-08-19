@@ -14,6 +14,7 @@ from app.deps import get_db, require_login, verify_csrf
 from app.flash import redirect_with_flash
 from app.google_oidc_config import resolve_google_oidc_config
 from app.models import User, UserSession
+from app.oidc_config import resolve_oidc_config
 from app.security import (
     SESSION_COOKIE_NAME,
     hash_session_token,
@@ -59,7 +60,16 @@ def login_form(request: Request, db: Session = Depends(get_db)):
     settings = request.app.state.settings
     templates = request.app.state.templates
     resolved = resolve_google_oidc_config(db, settings)
-    return templates.TemplateResponse(request, "login.html", {"google_oidc_enabled": resolved.usable})
+    oidc_resolved = resolve_oidc_config(db, settings)
+    return templates.TemplateResponse(
+        request,
+        "login.html",
+        {
+            "google_oidc_enabled": resolved.usable,
+            "oidc_enabled": oidc_resolved.usable,
+            "oidc_display_name": oidc_resolved.display_name,
+        },
+    )
 
 
 @router.post("/login")

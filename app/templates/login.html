@@ -15,14 +15,19 @@
       {% if flash %}
       <div class="flash flash-{{ request.query_params.get('flash_kind', 'success') }}" role="status">{{ flash }}</div>
       {% endif %}
+      {% if oidc_enabled %}
+      <a class="btn btn-sso" href="/auth/oidc/login">Sign in with {{ oidc_display_name }}</a>
+      {% endif %}
       {% if google_oidc_enabled %}
       <a class="btn btn-google" href="/auth/google/login">Sign in with Google</a>
+      {% endif %}
+      {% if oidc_enabled or google_oidc_enabled %}
       <p class="lede login-divider">or sign in with a local account (break-glass)</p>
       {% endif %}
       <form method="post" action="/login">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <label for="email">Email</label>
-        <input type="email" id="email" name="email" autocomplete="username" required {% if not google_oidc_enabled %}autofocus{% endif %}>
+        <input type="email" id="email" name="email" autocomplete="username" required {% if not (oidc_enabled or google_oidc_enabled) %}autofocus{% endif %}>
         <label for="password">Password</label>
         <input type="password" id="password" name="password" autocomplete="current-password" required>
         <button type="submit">Sign in</button>

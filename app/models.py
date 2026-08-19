@@ -1491,6 +1491,67 @@ class GoogleOidcSettings(Base):
         return f"GoogleOidcSettings(id={self.id!r}, enabled={self.enabled!r})"
 
 
+class OidcProviderSettings(Base):
+    """Admin-configured generic OIDC login settings (issue #17) — the
+    single most recently updated row is the active configuration, same
+    shape as `GoogleOidcSettings`. `issuer` drives discovery
+    (`{issuer}/.well-known/openid-configuration`); no provider-specific
+    endpoints are ever hardcoded, so Authentik/Keycloak/Okta/Entra/etc. all
+    configure through the same fields. Distinct from `GoogleOidcSettings`,
+    which keeps its own hardcoded Google-only flow (see app/google_oidc.py)
+    — the two coexist as separate login paths. The client secret is never
+    stored directly here: `secret_id` references a `Secret` (encrypted via
+    app/crypto.py), resolved server-side only and never redisplayed after
+    save. When no row exists (or the row is disabled),
+    `app/oidc_config.py` falls back to `GRC_OIDC_*` environment variables.
+    """
+
+    __tablename__ = "oidc_provider_settings"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    enabled: Mapped[bool] = mapped_column(default=False)
+    display_name: Mapped[str] = mapped_column(String(255), default="SSO")
+    issuer: Mapped[str] = mapped_column(String(500), default="")
+    client_id: Mapped[str] = mapped_column(String(255), default="")
+    secret_id: Mapped[str | None] = mapped_column(ForeignKey("secrets.id"), nullable=True)
+    allowed_domains: Mapped[str] = mapped_column(Text, default="")
+    auto_provision_enabled: Mapped[bool] = mapped_column(default=False)
+    updated_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    secret: Mapped[Secret | None] = relationship()
+
+    def __repr__(self) -> str:
+        return f"OidcProviderSettings(id={self.id!r}, enabled={self.enabled!r})"
+
+
+class ExternalIdentity(Base):
+    """A provider-neutral `(issuer, subject)` -> user link for the generic
+    OIDC login path (issue #17) — deterministic external identity
+    authority per PRD §5.11. Email is never the link key; a first-time
+    `(issuer, subject)` whose asserted email collides with an existing
+    local user is rejected rather than auto-linked (see
+    app/routers/oidc.py). Google's own login keeps using
+    `User.google_subject` instead of this table — it is a separate,
+    single-provider mechanism that predates this one and is left as-is.
+    """
+
+    __tablename__ = "external_identities"
+    __table_args__ = (UniqueConstraint("issuer", "subject", name="uq_external_identity_issuer_subject"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    issuer: Mapped[str] = mapped_column(String(500), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+    user: Mapped[User] = relationship()
+
+    def __repr__(self) -> str:
+        return f"ExternalIdentity(id={self.id!r}, issuer={self.issuer!r})"
+
+
 CONNECTION_DB_TYPES = ("postgres", "mysql", "sqlite", "generic")
 CONNECTION_TLS_MODES = ("disable", "prefer", "require", "verify_full")
 CONNECTION_TEST_STATUSES = ("untested", "success", "failure")

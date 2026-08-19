@@ -120,7 +120,7 @@ button {
   font: inherit;
 }
 
-.btn-google {
+.btn-google, .btn-sso {
   background: var(--accent);
   color: #fff;
 }
