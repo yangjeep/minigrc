@@ -672,6 +672,25 @@ ALLOWED_POLICY_MEDIA_TYPES = {
 }
 POLICY_SOURCE_TYPES = ("manual", "drive")
 
+# issue #31: per-version approval workflow, independent of Policy.status
+# above (which stays a document-identity-level "is this policy still
+# maintained at all" flag — see docs/superpowers/specs/2026-08-19-issue31-
+# policy-lifecycle-design.md §2). "superseded" is the automatic side
+# effect of a newer version becoming effective; "withdrawn" is the
+# manual terminal action, usable from any non-terminal state (an
+# abandoned draft that never reached approval, or a formerly-effective
+# version retired with no replacement, are the same action from this
+# app's perspective).
+POLICY_VERSION_LIFECYCLE_STATUSES = (
+    "draft",
+    "in_review",
+    "approved",
+    "effective",
+    "superseded",
+    "withdrawn",
+)
+POLICY_VERSION_REVIEW_DECISIONS = ("approved", "rejected")
+
 
 class Policy(Base):
     """A governance document tracked by this app (metadata only).
@@ -712,10 +731,22 @@ class Policy(Base):
         cascade="all, delete-orphan",
         order_by="PolicyVersion.version_number.desc()",
     )
+    control_mappings: Mapped[list[PolicyControlMapping]] = relationship(
+        back_populates="policy", cascade="all, delete-orphan"
+    )
 
     @property
     def latest_version(self) -> PolicyVersion | None:
         return self.versions[0] if self.versions else None
+
+    @property
+    def effective_version(self) -> PolicyVersion | None:
+        """The version this app currently treats as operative — the
+        version-level analog of the old single Policy.status field
+        (issue #31). At most one version is ever "effective" at a time
+        (enforced by app/policy_lifecycle.py's make_version_effective,
+        never by a DB constraint — see its docstring)."""
+        return next((v for v in self.versions if v.lifecycle_status == "effective"), None)
 
 
 class PolicyVersion(Base):
@@ -729,10 +760,43 @@ class PolicyVersion(Base):
     stored bytes) remains the authoritative integrity check regardless of
     `source_type`; `source_revision_id`/`source_modified_at` are preserved
     provenance, not a substitute for it.
+
+    The file-capture columns above are a plain, immutable-by-convention
+    fact (never event-sourced) — the same category as `EvidenceSnapshot`'s
+    captured bytes/hash. `lifecycle_status` and the columns below it
+    (issue #31) are different: they are a real event-sourced projection
+    over the "policy_version" DomainEvent aggregate (see
+    app/policy_lifecycle.py) and must never be written to directly
+    outside its projector functions. A rebuild resets only these
+    lifecycle columns back to their defaults and replays events on top —
+    it never touches the row's own existence or its file-capture columns.
     """
 
     __tablename__ = "policy_versions"
-    __table_args__ = (UniqueConstraint("policy_id", "version_number", name="uq_policy_version_number"),)
+    __table_args__ = (
+        UniqueConstraint("policy_id", "version_number", name="uq_policy_version_number"),
+        CheckConstraint(
+            f"lifecycle_status IN {POLICY_VERSION_LIFECYCLE_STATUSES}",
+            name="ck_policy_version_lifecycle_status",
+        ),
+        # At most one effective version per policy — the final guard
+        # against two concurrent requests each making a different
+        # already-approved version of the same policy effective (each
+        # request's own read of "is another version already effective"
+        # can't see the other's uncommitted write; this constraint is
+        # what actually stops it, not the application-level check in
+        # app/policy_lifecycle.py::make_version_effective, which is only
+        # a best-effort convenience for the common single-actor case).
+        # Same partial-index pattern as ControlOccurrence's
+        # uq_occurrence_control_due_no_period.
+        Index(
+            "uq_policy_version_one_effective_per_policy",
+            "policy_id",
+            unique=True,
+            sqlite_where=text("lifecycle_status = 'effective'"),
+            postgresql_where=text("lifecycle_status = 'effective'"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     policy_id: Mapped[str] = mapped_column(ForeignKey("policies.id"), nullable=False)
@@ -752,9 +816,28 @@ class PolicyVersion(Base):
     source_modified_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     captured_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
 
+    # Event-sourced lifecycle (issue #31) — see app/policy_lifecycle.py.
+    lifecycle_status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    submitted_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    submitted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    review_decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    review_comment: Mapped[str] = mapped_column(Text, default="")
+    effective_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    superseded_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    superseded_by_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("policy_versions.id"), nullable=True
+    )
+    withdrawn_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    withdrawn_reason: Mapped[str] = mapped_column(Text, default="")
+
     policy: Mapped[Policy] = relationship(back_populates="versions")
     approval_snapshots: Mapped[list[PolicyApprovalSnapshot]] = relationship(
         back_populates="policy_version", cascade="all, delete-orphan"
+    )
+    superseded_by_version: Mapped[PolicyVersion | None] = relationship(
+        remote_side="PolicyVersion.id", foreign_keys=[superseded_by_version_id]
     )
 
 
@@ -788,6 +871,28 @@ class PolicyApprovalSnapshot(Base):
     raw_payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
 
     policy_version: Mapped[PolicyVersion] = relationship(back_populates="approval_snapshots")
+
+
+class PolicyControlMapping(Base):
+    """Join table: which internal control this policy governs (issue #31).
+
+    Mirrors ControlRequirementMapping exactly. Frameworks are reached
+    transitively via the control's own FrameworkRequirement mappings —
+    matching PRD §4.1's "one shared internal control maps to multiple
+    framework criteria" invariant — rather than a duplicated direct
+    Policy-to-Framework link.
+    """
+
+    __tablename__ = "policy_control_mappings"
+    __table_args__ = (UniqueConstraint("policy_id", "control_id", name="uq_policy_control"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    policy_id: Mapped[str] = mapped_column(ForeignKey("policies.id"), nullable=False)
+    control_id: Mapped[str] = mapped_column(ForeignKey("internal_controls.id"), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+    policy: Mapped[Policy] = relationship(back_populates="control_mappings")
+    control: Mapped[InternalControl] = relationship()
 
 
 class GoogleDriveConnection(Base):

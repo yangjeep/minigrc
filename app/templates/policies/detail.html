@@ -77,7 +77,7 @@ version's stored bytes remain the authoritative record even after linking.</p>
 <h2>Versions</h2>
 <table>
   <thead>
-    <tr><th>Version</th><th>File</th><th>Source</th><th>Size</th><th>Captured</th><th>By</th><th>Note</th><th></th></tr>
+    <tr><th>Version</th><th>File</th><th>Source</th><th>Size</th><th>Captured</th><th>By</th><th>Note</th><th>Lifecycle</th><th></th><th></th></tr>
   </thead>
   <tbody>
     {% for version in policy.versions %}
@@ -89,13 +89,73 @@ version's stored bytes remain the authoritative record even after linking.</p>
       <td>{{ version.captured_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
       <td>{{ version.uploader }}</td>
       <td>{{ version.change_note }}</td>
+      <td>
+        <span class="badge badge-{{ version.lifecycle_status }}">{{ version.lifecycle_status }}</span>
+        {% if version.lifecycle_status == "superseded" and version.superseded_by_version %}
+        (by v{{ version.superseded_by_version.version_number }})
+        {% endif %}
+      </td>
+      <td>
+        {% if version.lifecycle_status == "draft" %}
+        <form method="post" action="/policies/{{ policy.id }}/versions/{{ version.id }}/submit-for-review" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+          <button type="submit">Submit for review</button>
+        </form>
+        {% elif version.lifecycle_status == "in_review" %}
+        <form method="post" action="/policies/{{ policy.id }}/versions/{{ version.id }}/review" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+          <input type="hidden" name="decision" value="approved">
+          <button type="submit">Approve</button>
+        </form>
+        <form method="post" action="/policies/{{ policy.id }}/versions/{{ version.id }}/review" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+          <input type="hidden" name="decision" value="rejected">
+          <input type="text" name="comment" placeholder="Reason for rejection" required>
+          <button type="submit">Reject</button>
+        </form>
+        {% elif version.lifecycle_status == "approved" %}
+        <form method="post" action="/policies/{{ policy.id }}/versions/{{ version.id }}/make-effective" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+          <button type="submit">Make effective</button>
+        </form>
+        {% endif %}
+        {% if version.lifecycle_status in ("draft", "in_review", "approved", "effective") %}
+        <form method="post" action="/policies/{{ policy.id }}/versions/{{ version.id }}/withdraw" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+          <input type="text" name="reason" placeholder="Reason (optional)">
+          <button type="submit" class="danger-button">Withdraw</button>
+        </form>
+        {% endif %}
+      </td>
       <td><a href="/policies/{{ policy.id }}/versions/{{ version.id }}/download">Download</a></td>
     </tr>
     {% else %}
-    <tr><td colspan="8">No versions uploaded yet.</td></tr>
+    <tr><td colspan="10">No versions uploaded yet.</td></tr>
     {% endfor %}
   </tbody>
 </table>
+
+<h2>Mapped controls</h2>
+{% if policy.control_mappings %}
+<ul>
+  {% for mapping in policy.control_mappings %}
+  <li><a href="/controls/{{ mapping.control.id }}">{{ mapping.control.name }}</a></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p>No controls mapped yet.</p>
+{% endif %}
+{% if available_controls %}
+<form method="post" action="/policies/{{ policy.id }}/control-mappings" class="inline-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <select name="control_id" required>
+    {% for control in available_controls %}
+    <option value="{{ control.id }}">{{ control.name }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Map control</button>
+</form>
+{% endif %}
 
 <h2>Upload new version</h2>
 <form method="post" action="/policies/{{ policy.id }}/versions" enctype="multipart/form-data">
