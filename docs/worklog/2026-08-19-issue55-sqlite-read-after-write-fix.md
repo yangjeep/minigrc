@@ -218,6 +218,37 @@ it ever is.
   place, rather than accepting an initially-clean batch of runs at face
   value.
 
+## Post-push correction: the frequency assertion wasn't portable
+
+The version of this fix first pushed for review included a third
+assertion on `test_sequential_http_write_then_read_is_eventually_consistent`:
+an upper bound of 2 *immediate* misses per 150 iterations, reasoned from
+local measurements (~0.1-0.3% post-fix vs ~1-2.5%+ pre-fix). CI (GitHub
+Actions) immediately falsified the premise: the same code, same test,
+showed **43/150 (≈29%) immediate misses** — permanence still held (every
+one resolved within the retry window), but the frequency was two orders
+of magnitude higher than local measurements.
+
+This is itself an important data point for #57 (posted to that issue):
+the residual's manifestation rate appears dominated by host CPU/
+thread-scheduling contention, which varies enormously across
+environments — consistent with the root cause (a threadpool-dispatched
+commit racing an already-sent response; a busier/more constrained
+thread pool makes the race window matter far more often). Practically,
+this means #57 is not a rare curiosity confined to unusual conditions —
+on modest self-hosted hardware (this app's actual target deployment
+profile) it could be frequent, not rare.
+
+The frequency assertion was removed as a result — it cannot be made
+portable across environments without either an environment-specific
+threshold (bad practice) or an impractically large sample size, and a
+fixed threshold calibrated against one environment is guaranteed to
+misfire on another. The structural test
+(`test_sqlite_engine_invalidates_connections_on_checkin`) remains the
+real, portable regression coverage for this fix's actual mechanism; the
+permanence test's retry window was widened from 1.0s to 3.0s for extra
+margin given the now-confirmed cross-environment variability.
+
 ## Known deferred/untested paths
 
 - `app/worker.py` was not independently load-tested against this fix,
@@ -228,4 +259,5 @@ it ever is.
   #55) is not addressed — SQLite is documented as the "low-ops/simple
   deployment" backend, not a high-concurrency one; out of scope here.
 - Issue #57 (the actual remaining root cause) is unresolved and requires
-  its own architectural decision before a fix is attempted.
+  its own architectural decision before a fix is attempted — its
+  practical severity was revised upward after the CI measurement above.
