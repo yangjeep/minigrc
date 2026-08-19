@@ -8,7 +8,18 @@
   <dd class="col-sm-9">{{ user_row.created_at.strftime("%Y-%m-%d %H:%M:%S") }} UTC</dd>
   <dt class="col-sm-3">Google sign-in</dt>
   <dd class="col-sm-9">{{ "Linked" if user_row.google_subject else "Not linked" }}</dd>
+  <dt class="col-sm-3">Role source</dt>
+  <dd class="col-sm-9">
+    {% if user_row.role_source == "oidc_mapped" %}
+    OIDC-managed (recomputed from group mapping on each sign-in)
+    {% else %}
+    Locally set
+    {% endif %}
+  </dd>
 </dl>
+{% if user_row.role_source == "oidc_mapped" %}
+<p class="text-secondary small">Saving below pins this role locally — it will no longer be recomputed from OIDC group mapping on future sign-ins.</p>
+{% endif %}
 <form method="post" action="/admin/users/{{ user_row.id }}/edit">
   <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
   <label>Role

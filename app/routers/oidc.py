@@ -39,6 +39,7 @@ from app.oidc import (
     verify_identity,
 )
 from app.oidc_config import ResolvedOidcConfig, resolve_oidc_config
+from app.oidc_role_mapping import apply_role_mapping
 from app.routers.auth import start_user_session
 from app.security import normalize_email
 
@@ -124,11 +125,22 @@ def _resolve_user(
 
     is_first_user = db.scalar(select(func.count()).select_from(User)) == 0
     status = "active" if resolved.auto_provision_enabled else "pending"
-    role = "admin" if (is_first_user and resolved.auto_provision_enabled) else "operator"
+    if is_first_user and resolved.auto_provision_enabled:
+        # Bootstrap admin: always locally managed, independent of any
+        # OIDC group mapping — a fresh deployment must always have at
+        # least one admin whose access can't be revoked by an IdP claim.
+        role, role_source = "admin", "local"
+    else:
+        # Owned by the OIDC login flow from the start (issue #18) — a
+        # no-op today if no OidcRoleMapping row exists yet, but takes
+        # effect on this user's *next* login the moment an admin adds
+        # one, with no separate backfill needed.
+        role, role_source = "operator", "oidc_mapped"
     user = User(
         email=normalized_email,
         password_hash="",  # SSO-only account; local login stays unusable until a password is set
         role=role,
+        role_source=role_source,
         status=status,
     )
     db.add(user)
@@ -213,6 +225,8 @@ def oidc_callback(
         return redirect_with_flash("/login", DISABLED_MESSAGE, kind="error")
     if user.status == "pending":
         return redirect_with_flash("/login", PENDING_MESSAGE, kind="error")
+
+    apply_role_mapping(db, user, identity.claims, role_claim_name=resolved.role_claim_name, actor="system")
 
     record_audit_event(
         db,

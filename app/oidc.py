@@ -44,6 +44,11 @@ class OidcIdentity:
     subject: str
     email: str
     email_verified: bool
+    # The full verified claim set (issue #18) — so callers can read a
+    # configurable role/group claim without a second JWT decode. This
+    # module stays agnostic of what any particular claim name means;
+    # only app/oidc_role_mapping.py interprets it.
+    claims: dict
 
 
 def new_state() -> str:
@@ -194,4 +199,5 @@ def verify_identity(
         subject=claims["sub"],
         email=email,
         email_verified=bool(claims.get("email_verified")),
+        claims=dict(claims),
     )

@@ -36,6 +36,7 @@ USERS_REGISTER_CONFIG = RegisterConfig(
     fields=(
         FieldSpec(name="email", type="text", read_only=True),
         FieldSpec(name="role", type="text", read_only=True),
+        FieldSpec(name="role_source", type="text", read_only=True),
         FieldSpec(name="status", type="text", read_only=True),
         FieldSpec(
             name="created_at",
@@ -144,6 +145,12 @@ def update_user(
 
     user.role = role
     user.status = status
+    # An explicit admin decision always pins the role locally (issue
+    # #18) — it wins over the generic-OIDC claim/group mapping flow on
+    # every subsequent login until another explicit admin edit changes
+    # it, even if the value submitted here happens to match what
+    # mapping would have computed anyway.
+    user.role_source = "local"
     db.flush()
     record_audit_event(
         db,

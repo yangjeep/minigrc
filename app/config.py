@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     oidc_client_secret: str = ""
     oidc_allowed_domains: str = ""
     oidc_display_name: str = "SSO"
+    oidc_role_claim_name: str = "groups"
 
     # OAuth for the org-level Drive connection stays distinct from OIDC
     # login above, even if an operator points both at the same Google

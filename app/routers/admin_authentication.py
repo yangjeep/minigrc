@@ -12,13 +12,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
 from app.deps import get_db, require_admin, verify_csrf
 from app.flash import redirect_with_flash
 from app.google_oidc_config import resolve_google_oidc_config
-from app.models import GoogleOidcSettings, OidcProviderSettings, User, new_id
+from app.models import USER_ROLES, GoogleOidcSettings, OidcProviderSettings, OidcRoleMapping, User, new_id
 from app.oidc_config import resolve_oidc_config
 from app.secrets import create_encrypted_secret
 
@@ -171,6 +172,7 @@ def update_oidc_settings(
     client_secret: str = Form(""),
     allowed_domains: str = Form(""),
     auto_provision_enabled: bool = Form(False),
+    role_claim_name: str = Form("groups"),
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
     _csrf: None = Depends(verify_csrf),
@@ -199,6 +201,7 @@ def update_oidc_settings(
     row.secret_id = secret_id
     row.allowed_domains = allowed_domains.strip()
     row.auto_provision_enabled = auto_provision_enabled
+    row.role_claim_name = role_claim_name.strip() or "groups"
     row.updated_by = admin.email
     db.flush()
     record_audit_event(
@@ -208,8 +211,81 @@ def update_oidc_settings(
         action="update",
         detail=(
             f"Set enabled={row.enabled} issuer='{row.issuer}' "
-            f"auto_provision_enabled={row.auto_provision_enabled} allowed_domains='{row.allowed_domains}'"
+            f"auto_provision_enabled={row.auto_provision_enabled} allowed_domains='{row.allowed_domains}' "
+            f"role_claim_name='{row.role_claim_name}'"
         ),
         actor=admin.email,
     )
     return redirect_with_flash("/admin/authentication/oidc", "Generic OIDC settings saved.")
+
+
+@router.get("/oidc/roles")
+def oidc_role_mappings_form(request: Request, db: Session = Depends(get_db)):
+    mappings = db.scalars(select(OidcRoleMapping).order_by(OidcRoleMapping.claim_value)).all()
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request,
+        "admin/authentication/oidc_roles.html",
+        {"mappings": mappings, "roles": USER_ROLES},
+    )
+
+
+@router.post("/oidc/roles")
+def create_oidc_role_mapping(
+    claim_value: str = Form(...),
+    role: str = Form(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+    _csrf: None = Depends(verify_csrf),
+):
+    claim_value = claim_value.strip()
+    if not claim_value or role not in USER_ROLES:
+        return redirect_with_flash(
+            "/admin/authentication/oidc/roles", "A claim value and a valid role are required.", kind="error"
+        )
+
+    mapping = OidcRoleMapping(claim_value=claim_value, role=role, updated_by=admin.email)
+    db.add(mapping)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        return redirect_with_flash(
+            "/admin/authentication/oidc/roles",
+            f"'{claim_value}' is already mapped to a role.",
+            kind="error",
+        )
+    record_audit_event(
+        db,
+        entity_type="oidc_role_mapping",
+        entity_id=mapping.id,
+        action="create",
+        detail=f"Mapped claim value '{claim_value}' to role '{role}'",
+        actor=admin.email,
+    )
+    return redirect_with_flash("/admin/authentication/oidc/roles", f"Mapped '{claim_value}' to {role}.")
+
+
+@router.post("/oidc/roles/{mapping_id}/delete")
+def delete_oidc_role_mapping(
+    mapping_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+    _csrf: None = Depends(verify_csrf),
+):
+    mapping = db.get(OidcRoleMapping, mapping_id)
+    if mapping is None:
+        return redirect_with_flash("/admin/authentication/oidc/roles", "Mapping not found.", kind="error")
+
+    claim_value, role = mapping.claim_value, mapping.role
+    db.delete(mapping)
+    db.flush()
+    record_audit_event(
+        db,
+        entity_type="oidc_role_mapping",
+        entity_id=mapping_id,
+        action="delete",
+        detail=f"Removed mapping of claim value '{claim_value}' to role '{role}'",
+        actor=admin.email,
+    )
+    return redirect_with_flash("/admin/authentication/oidc/roles", f"Removed mapping for '{claim_value}'.")

@@ -18,6 +18,7 @@
 {% if not_usable_reason %}
 <p class="text-secondary small" role="status">{{ not_usable_reason }}</p>
 {% endif %}
+<p class="lede"><a href="/admin/authentication/oidc/roles">Manage claim/group -&gt; role mappings &rarr;</a></p>
 <form method="post" action="/admin/authentication/oidc">
   <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
   <div class="form-check mb-2">
@@ -44,6 +45,10 @@
     <label class="form-check-label" for="auto_provision_enabled">Automatically create an account on first sign-in</label>
   </div>
   <p class="text-secondary small">When off, a first-time sign-in creates a <strong>pending</strong> account that an admin must approve under Admin &gt; Users before it can sign in. A sign-in whose email already belongs to an existing account is always rejected rather than linked — an admin must resolve that manually.</p>
+  <label class="d-block mb-2">Role/group claim name
+    <input type="text" name="role_claim_name" value="{{ row.role_claim_name if row and row.role_claim_name else 'groups' }}">
+  </label>
+  <p class="text-secondary small">Which verified ID token claim to read group membership from. Only takes effect once at least one mapping is added below — see "Manage claim/group -&gt; role mappings" above.</p>
   <button type="submit" class="btn btn-primary mt-2">Save</button>
 </form>
 {% endblock %}
