@@ -20,7 +20,14 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.events import DomainEvent, ProjectorFn, append_and_project, rebuild_projection
-from app.models import ControlOccurrence, ControlOccurrenceEvidence, ControlPeriod, InternalControl, new_id
+from app.models import (
+    ControlOccurrence,
+    ControlOccurrenceEvidence,
+    ControlOccurrenceEvidenceArtifact,
+    ControlPeriod,
+    InternalControl,
+    new_id,
+)
 
 
 def _parse_iso_datetime(value: str | None) -> datetime.datetime | None:
@@ -92,24 +99,42 @@ def _project_evidence_linked(session: Session, event: DomainEvent) -> None:
     )
 
 
+def _project_evidence_artifact_linked(session: Session, event: DomainEvent) -> None:
+    payload = json.loads(event.payload_json)
+    session.add(
+        ControlOccurrenceEvidenceArtifact(
+            occurrence_id=event.aggregate_id,
+            evidence_artifact_version_id=payload["evidence_artifact_version_id"],
+        )
+    )
+
+
 CONTROL_OCCURRENCE_PROJECTORS: dict[str, ProjectorFn] = {
     "ControlOccurrenceMaterialized": _project_materialized,
     "ControlOccurrenceRecordedManually": _project_recorded_manually,
     "ControlOccurrencePerformed": _project_performed,
     "ControlOccurrenceEvidenceLinked": _project_evidence_linked,
+    "ControlOccurrenceEvidenceArtifactLinked": _project_evidence_artifact_linked,
 }
 
 
 def _reset_control_occurrences(session: Session) -> None:
     session.execute(delete(ControlOccurrenceEvidence))
+    session.execute(delete(ControlOccurrenceEvidenceArtifact))
     session.execute(delete(ControlOccurrence))
 
 
 def rebuild_control_occurrence_projection(session: Session) -> None:
     """Wipe and deterministically rebuild the ControlOccurrence/
-    ControlOccurrenceEvidence projections from DomainEvent history. Admin/
-    ops recovery path — proves app/events.py's rebuild contract holds for
-    this real domain, not just the generic infrastructure test."""
+    ControlOccurrenceEvidence/ControlOccurrenceEvidenceArtifact
+    projections from DomainEvent history. Admin/ops recovery path —
+    proves app/events.py's rebuild contract holds for this real domain,
+    not just the generic infrastructure test. Call this after
+    app/evidence_repository.py::rebuild_evidence_artifact_version_projection
+    if both were reset, since that function's own reset also clears
+    ControlOccurrenceEvidenceArtifact (a foreign-key ordering
+    requirement, not this aggregate's own concern) — see its docstring.
+    """
     rebuild_projection(
         session,
         CONTROL_OCCURRENCE_PROJECTORS,
@@ -320,6 +345,30 @@ def link_evidence(
         aggregate_id=occurrence.id,
         event_type="ControlOccurrenceEvidenceLinked",
         payload={"evidence_snapshot_id": evidence_snapshot_id},
+        actor_type=actor_type,
+        actor_id=actor_id,
+    )
+
+
+def link_evidence_artifact_version(
+    session: Session,
+    occurrence: ControlOccurrence,
+    evidence_artifact_version_id: str,
+    *,
+    actor_type: str = "user",
+    actor_id: str | None = None,
+) -> None:
+    """Link an EvidenceArtifactVersion (issue #32) to an occurrence —
+    mirrors link_evidence exactly. The caller must flush and catch
+    IntegrityError for a duplicate (occurrence_id,
+    evidence_artifact_version_id) link, same as link_evidence."""
+    append_and_project(
+        session,
+        CONTROL_OCCURRENCE_PROJECTORS,
+        aggregate_type="control_occurrence",
+        aggregate_id=occurrence.id,
+        event_type="ControlOccurrenceEvidenceArtifactLinked",
+        payload={"evidence_artifact_version_id": evidence_artifact_version_id},
         actor_type=actor_type,
         actor_id=actor_id,
     )

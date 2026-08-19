@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Evidence Artifacts · minigrc{% endblock %}
+{% block content %}
+<h1>Evidence Artifacts</h1>
+{% if not configured %}
+<div class="flash flash-error" role="status">
+  The evidence artifact repository is not configured — set GRC_S3_ENDPOINT_URL, GRC_S3_BUCKET,
+  GRC_S3_ACCESS_KEY_ID, and GRC_S3_SECRET_ACCESS_KEY to enable capture/upload.
+</div>
+{% else %}
+<p class="lede"><a href="/evidence-artifacts/new">+ New evidence artifact</a></p>
+{% endif %}
+
+<table>
+  <thead>
+    <tr><th>Title</th><th>Latest version</th><th>Captured</th></tr>
+  </thead>
+  <tbody>
+    {% for artifact in artifacts %}
+    <tr>
+      <td><a href="/evidence-artifacts/{{ artifact.id }}">{{ artifact.title }}</a></td>
+      <td>{{ "v" ~ artifact.latest_version.version_number if artifact.latest_version else "no version yet" }}</td>
+      <td>{{ artifact.latest_version.captured_at.strftime("%Y-%m-%d %H:%M:%S") if artifact.latest_version else "—" }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3">No evidence artifacts yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

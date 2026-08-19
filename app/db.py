@@ -36,6 +36,34 @@ def _set_sqlite_pragmas(dbapi_connection, connection_record) -> None:
     cursor.close()
 
 
+# A genuine, pre-existing, foundational (but currently LATENT — not
+# reachable by any web route or background job in this codebase today,
+# see tests/test_sqlite_savepoint_rollback.py's module docstring for the
+# reachability check) bug was found here: pysqlite's own legacy
+# implicit BEGIN/COMMIT tracking can make a released SAVEPOINT
+# (Session.begin_nested(), used by every event-sourced command via
+# app/events.py::append_and_project) survive a later session.rollback()
+# that should have undone it — but only when a session.commit() already
+# happened earlier in the same session, which no current request/job
+# path does before event-sourced work. The standard SQLAlchemy-
+# documented fix (disable pysqlite's isolation_level, emit explicit
+# BEGIN/BEGIN IMMEDIATE ourselves) was tried and measured directly —
+# both plain `BEGIN` and `BEGIN IMMEDIATE` reintroduce the exact class
+# of concurrent "database is locked" failure #55 fixed (confirmed via
+# the same LiveServer+concurrent-client harness at as few as 2
+# concurrent requests), because emitting an explicit transaction-begin
+# at the start of every session's activity — including plain reads —
+# holds a lock for the request's full duration instead of only around
+# the brief window pysqlite's own implicit BEGIN uses immediately
+# before a write. That trade (a severe, easily-triggered availability
+# regression for every concurrent user, in exchange for closing a
+# currently-unreachable correctness gap) is not acceptable to make
+# unilaterally here — deferred to issue #65 for a more surgical fix
+# (e.g. only emitting BEGIN IMMEDIATE for sessions that actually go on
+# to write, or reconsidering whether begin_nested()
+# is required at all for the retry logic it supports).
+
+
 def _invalidate_on_checkin(dbapi_connection, connection_record) -> None:
     """Force every checked-in SQLite connection closed so the next
     checkout always opens a fresh one (issue #55).

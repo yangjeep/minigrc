@@ -36,6 +36,7 @@ from app.routers import (
     controls,
     dashboard,
     evidence,
+    evidence_artifacts,
     frameworks,
     google_drive,
     google_oidc,
@@ -62,6 +63,7 @@ NAV_ITEMS = [
     ("Control Periods", "/control-periods"),
     ("Policies", "/policies"),
     ("Evidence", "/evidence"),
+    ("Evidence Artifacts", "/evidence-artifacts"),
     ("Risks", "/risks"),
     ("People", "/people"),
     ("Vendors", "/vendors"),
@@ -189,6 +191,7 @@ def create_app(
     app.include_router(connections.connections_register_router)
     app.include_router(admin_connections.legacy_router)
     app.include_router(evidence.router)
+    app.include_router(evidence_artifacts.router)
     app.include_router(trust_center.router)
     app.include_router(trust_center.sections_register_router)
     app.include_router(trust_center_public.router)
