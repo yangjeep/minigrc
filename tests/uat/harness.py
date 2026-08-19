@@ -219,16 +219,17 @@ def poll_for_visibility(session_factory, fetch):
     """Retry `fetch(session)` in fresh sessions until it returns a
     truthy value, or raise TimeoutError.
 
-    Works around a confirmed pre-existing read-after-write visibility gap
-    in the app's SQLite backend (see app/db.py: a file-based SQLite
-    engine defaults to SQLAlchemy's QueuePool, so a `session_factory()`
-    call shortly after a write committed on a different pooled
-    connection/thread can transiently miss it — reproduced against the
-    app's own plain HTTP GET-after-POST-redirect cycle, not just this
-    harness; tracked as issue #55, out of scope for #38 to fix here).
-    Every scenario in tests/uat/ sources ids from real HTTP
-    responses specifically to avoid this window; use this helper only for
-    the rare check that has no rendered/API surface to read instead."""
+    Originally written as a stopgap for issue #55, a real read-after-
+    write visibility gap. #55's SQLite-connection-freshness fix
+    (`app/db.py::_invalidate_on_checkin`) shipped and measurably reduced
+    it, but a rarer residual is a separate, backend-independent FastAPI
+    response-vs-commit ordering behavior tracked as issue #57 — see
+    `tests/test_sqlite_read_after_write.py` for the full account. Kept as
+    cheap defense-in-depth for the rare side-channel check that has no
+    rendered/API surface to read instead — every scenario in tests/uat/
+    still prefers sourcing ids from real HTTP responses over a database
+    peek, both for UAT faithfulness and because it avoids racing #57's
+    residual far more often than a raw DB peek would."""
     deadline = time.monotonic() + _POLL_TIMEOUT_SECONDS
     while True:
         with session_factory() as session:
