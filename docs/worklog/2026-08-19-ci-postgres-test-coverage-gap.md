@@ -75,3 +75,25 @@ the shared backfill logic) and were manually validated against the
 actual Alembic upgrade path during their own implementation sessions.
 This fix closes the CI verification gap; it is not evidence that a
 Postgres-specific defect was found and hidden.
+
+## Update: this fix's own first CI run caught a real gap
+
+Exactly the outcome this fix exists to catch: on this PR's own first
+CI run, `test_role_rename_against_postgres` (#37) passed cleanly, but
+`test_backfill_against_postgres` (#31) failed —
+`psycopg.errors.DatatypeMismatch: column "archived" is of type boolean
+but expression is of type integer`.
+
+Root cause: the **test fixture's** own hand-written seed SQL
+(`tests/test_policy_lifecycle_migration.py::_INSERT_POLICY_SQL`) used
+the literal `0` for the `policies.archived` boolean column. SQLite
+silently coerces integer literals into its boolean-as-integer storage;
+PostgreSQL's real `boolean` type does not implicitly cast from
+`integer` in an `INSERT`. **Not a defect in the migration
+(`c4e8a7f2b391`) itself** — that migration never inserts into
+`policies` at all, only reads it (for the `Policy.status` backfill
+join) and writes to `policy_versions`/`domain_events`. Fixed by
+changing the literal to `false` (valid boolean-literal syntax on both
+SQLite ≥3.23 and PostgreSQL). Re-verified: SQLite suite still green (8
+passed, 1 skipped), and this PR's next CI run confirms the Postgres
+path.
