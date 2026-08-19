@@ -586,7 +586,16 @@ class VendorUserSnapshotRow(Base):
     matched_person: Mapped[Person | None] = relationship()
 
 
-USER_ROLES = ("user", "admin")
+USER_ROLES = ("admin", "operator", "reader", "auditor")
+# admin: everything below plus every require_admin-gated route
+#   (program/connector/auth/user/config administration).
+# operator: every material compliance mutation not already admin-only —
+#   the 1:1 rename of the old binary role's "user" value (issue #37).
+# reader / auditor: read-only for material compliance state (see
+#   app/deps.py::require_write_access). Identical server-side access in
+#   this slice — no object/period-scoping mechanism exists yet (#30) to
+#   express the audit-scope distinction the product eventually wants
+#   between them; staged explicitly rather than faked.
 USER_STATUSES = ("active", "disabled", "pending")
 
 
@@ -595,12 +604,12 @@ class User(Base):
 
     Email is the login identifier, normalized to lowercase and stored
     unique. Passwords are hashed with pwdlib (Argon2) — see app/security.py.
-    `role` is a binary distinction (`"user"` or `"admin"`) — not general
-    RBAC — used to gate integration configuration, credential connections,
-    manual syncs, and destructive vendor operations. Every other
-    authenticated action remains available to any logged-in user (see
-    docs/decisions/architectural-decisions.md). `person_id` optionally links
-    this login identity to the shared `Person` directory.
+    `role` is one of `USER_ROLES` (`admin`/`operator`/`reader`/`auditor`,
+    issue #37) gating material-state mutation (see
+    `app/deps.py::require_write_access`) and admin-only integration
+    configuration, credential connections, manual syncs, and destructive
+    vendor operations (see `app/deps.py::require_admin`). `person_id`
+    optionally links this login identity to the shared `Person` directory.
 
     `status` gates login (see `app/deps.py::require_login`): `"active"` can
     sign in normally, `"disabled"` is rejected outright, `"pending"` is an
@@ -626,7 +635,7 @@ class User(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="operator")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     google_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)

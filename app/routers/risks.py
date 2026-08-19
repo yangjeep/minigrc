@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
 from app.csv_import import CsvTooLargeError, read_csv_upload
-from app.deps import get_db, require_login, verify_csrf
+from app.deps import get_db, require_login, require_write_access, verify_csrf
 from app.flash import redirect_with_flash
 from app.imports import enqueue_and_run_import
 from app.models import Risk
@@ -34,6 +34,7 @@ def create_risk(
     owner: str = Form(""),
     treatment_plan: str = Form(""),
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     title = title.strip()
@@ -69,6 +70,7 @@ def import_risks(
     request: Request,
     file: UploadFile,
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     settings = request.app.state.settings

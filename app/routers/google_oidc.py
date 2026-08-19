@@ -131,7 +131,7 @@ def _resolve_user(
     person = db.scalar(select(Person).where(Person.email == normalized_email))
     is_first_user = db.scalar(select(func.count()).select_from(User)) == 0
     status = "active" if resolved.auto_provision_enabled else "pending"
-    role = "admin" if (is_first_user and resolved.auto_provision_enabled) else "user"
+    role = "admin" if (is_first_user and resolved.auto_provision_enabled) else "operator"
     user = User(
         email=normalized_email,
         password_hash="",  # Google-only account; local login stays unusable until a password is set

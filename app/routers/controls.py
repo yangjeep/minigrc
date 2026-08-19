@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
 from app.control_occurrences import generate_occurrences, record_occurrence_manually
-from app.deps import get_db, require_login, verify_csrf
+from app.deps import get_db, require_login, require_write_access, verify_csrf
 from app.flash import redirect_with_flash
 from app.models import (
     CADENCE_TYPES,
@@ -123,6 +123,7 @@ def set_control_owner(
     request: Request,
     owner_person_id: str = Form(""),
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     """Set the control's owner_person_id (issue #11) — a real FK, distinct
@@ -167,13 +168,13 @@ def _parse_due_on(value: str) -> datetime.datetime | None:
 def generate_control_occurrences(
     control_id: str,
     db: Session = Depends(get_db),
-    user=Depends(require_login),
+    user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     """Self-serve rolling generation for one control (period-less path) —
-    require_login, not require_admin: unlike bulk cross-control generation
-    (app/routers/control_periods.py::generate_period_occurrences), this
-    only affects the one control the caller is already looking at."""
+    require_write_access, not require_admin: unlike bulk cross-control
+    generation (app/routers/control_periods.py::generate_period_occurrences),
+    this only affects the one control the caller is already looking at."""
     control = db.get(InternalControl, control_id)
     if control is None:
         raise HTTPException(status_code=404, detail="Control not found")
@@ -191,7 +192,7 @@ def create_control_occurrence(
     due_on: str = Form(""),
     scope_note: str = Form(""),
     db: Session = Depends(get_db),
-    user=Depends(require_login),
+    user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     control = db.get(InternalControl, control_id)
@@ -244,6 +245,7 @@ def add_mapping(
     control_id: str,
     requirement_id: str = Form(...),
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     control = db.get(InternalControl, control_id)

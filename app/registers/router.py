@@ -16,11 +16,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
-from app.deps import get_db, require_login, verify_csrf_header
+from app.deps import WRITE_ROLES, get_db, require_login, verify_csrf_header
 from app.models import User
 from app.registers.config import RegisterConfig
 
 _MISSING = object()
+_WRITE_ACTIONS = frozenset({"create", "edit", "delete"})
 
 
 def _iso(dt: datetime.datetime) -> str:
@@ -62,6 +63,11 @@ def _validate(config: RegisterConfig, payload: dict[str, Any], *, partial: bool)
 def _check_permission(config: RegisterConfig, action: str, user: User) -> None:
     if action in config.require_admin_for and user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
+    # issue #37: a write action always requires at least operator-or-admin,
+    # regardless of whether this register also declares a stricter
+    # require_admin_for override above — reader/auditor may never mutate.
+    if action in _WRITE_ACTIONS and user.role not in WRITE_ROLES:
+        raise HTTPException(status_code=403, detail="Write access required")
 
 
 def build_register_router(config: RegisterConfig) -> APIRouter:
