@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
+from app.compliance_scope import get_compliance_scope
+from app.config import Settings
 from app.models import (
     ControlOccurrence,
     ControlOccurrenceEvidence,
@@ -33,6 +35,7 @@ from app.models import (
     InternalControl,
     Policy,
 )
+from app.onboarding import compute_onboarding_steps
 
 READINESS_CATEGORIES = {
     "occurrence_overdue": "Missed control occurrence",
@@ -298,3 +301,80 @@ def compute_readiness_queue(session: Session, *, framework_id: str | None = None
         return (item.due_on is None, item.due_on or datetime.date.max, item.category)
 
     return sorted(matching, key=sort_key)
+
+
+READINESS_STAGES = (
+    "scope_incomplete",
+    "foundation_incomplete",
+    "operating_controls",
+    "evidence_gaps",
+    "testing_remediation_incomplete",
+    "audit_package_ready",
+)
+
+READINESS_STAGE_LABELS = {
+    "scope_incomplete": "Scope incomplete",
+    "foundation_incomplete": "Foundation incomplete",
+    "operating_controls": "Operating controls",
+    "evidence_gaps": "Evidence gaps",
+    "testing_remediation_incomplete": "Testing/remediation incomplete",
+    "audit_package_ready": "Audit-package ready",
+}
+
+_EVIDENCE_GAP_CATEGORIES = frozenset({"occurrence_overdue", "occurrence_missing_evidence", "evidence_stale"})
+_TESTING_REMEDIATION_CATEGORIES = frozenset(
+    {
+        "control_test_failed_no_finding",
+        "finding_needs_attention",
+        "finding_needs_retest",
+        "control_missing_owner",
+        "finding_missing_owner",
+        "policy_review_overdue",
+    }
+)
+
+
+@dataclass(frozen=True)
+class ReadinessStageResult:
+    stage: str
+    reason: str
+
+
+def compute_readiness_stage(session: Session, settings: Settings) -> ReadinessStageResult:
+    """PRD §8's explainable readiness stages, derived deterministically
+    from state #14/#30 already compute — never a second, independently
+    maintained progress model. Walks the stages in order and returns the
+    first one whose condition is unmet; `occurrence_upcoming` alone never
+    blocks `audit_package_ready` since it is proactive, not a blocker."""
+    if get_compliance_scope(session) is None:
+        return ReadinessStageResult("scope_incomplete", "No compliance scope has been defined yet.")
+
+    onboarding_steps = {step.key: step for step in compute_onboarding_steps(session, settings)}
+
+    if not onboarding_steps["starter_controls"].is_complete:
+        return ReadinessStageResult(
+            "foundation_incomplete", "Starter controls are not generated for every requirement yet."
+        )
+    if not onboarding_steps["assign_owners"].is_complete:
+        return ReadinessStageResult("foundation_incomplete", "One or more controls has no owner assigned.")
+
+    if not onboarding_steps["operating_period"].is_complete:
+        return ReadinessStageResult("operating_controls", "No control period is active yet.")
+
+    queue = compute_readiness_queue(session)
+    categories_present = {item.category for item in queue}
+
+    evidence_gap_hit = categories_present & _EVIDENCE_GAP_CATEGORIES
+    if evidence_gap_hit:
+        return ReadinessStageResult(
+            "evidence_gaps", f"{len(evidence_gap_hit)} evidence-related gap category(ies) are open."
+        )
+
+    testing_hit = categories_present & _TESTING_REMEDIATION_CATEGORIES
+    if testing_hit:
+        return ReadinessStageResult(
+            "testing_remediation_incomplete",
+            f"{len(testing_hit)} testing/remediation gap category(ies) are open.",
+        )
+
+    return ReadinessStageResult("audit_package_ready", "No outstanding readiness gaps were found.")

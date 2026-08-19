@@ -10,9 +10,16 @@ from app.deps import get_db, require_login
 from app.models import AuditEvent, Framework, Policy, RequirementNote, Risk, User
 from app.onboarding import compute_onboarding_steps
 from app.progress import compute_progress
-from app.readiness import READINESS_CATEGORIES, compute_readiness_queue
+from app.readiness import (
+    READINESS_CATEGORIES,
+    READINESS_STAGE_LABELS,
+    compute_readiness_queue,
+    compute_readiness_stage,
+)
 
 router = APIRouter(dependencies=[Depends(require_login)])
+
+_TOP_PRIORITY_LIMIT = 5
 
 
 @router.get("/")
@@ -78,6 +85,8 @@ def dashboard(
     onboarding_steps = compute_onboarding_steps(db, request.app.state.settings)
     onboarding_complete_count = sum(1 for step in onboarding_steps if step.is_complete)
 
+    stage_result = compute_readiness_stage(db, request.app.state.settings)
+
     templates = request.app.state.templates
     return templates.TemplateResponse(
         request,
@@ -94,8 +103,13 @@ def dashboard(
             "recent_audit_events": recent_audit_events,
             "onboarding_complete_count": onboarding_complete_count,
             "onboarding_total_count": len(onboarding_steps),
-            "readiness_items": readiness_items,
+            "readiness_item_count": len(readiness_items),
+            "top_priority_items": readiness_items[:_TOP_PRIORITY_LIMIT],
+            "remaining_readiness_items": readiness_items[_TOP_PRIORITY_LIMIT:],
             "readiness_categories": READINESS_CATEGORIES,
             "selected_framework_id": framework_id or "",
+            "readiness_stage": stage_result.stage,
+            "readiness_stage_label": READINESS_STAGE_LABELS[stage_result.stage],
+            "readiness_stage_reason": stage_result.reason,
         },
     )

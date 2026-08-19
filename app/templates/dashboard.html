@@ -5,7 +5,21 @@
 {{ page_header("Dashboard") }}
 <p class="lede">Lightweight, self-hosted ISMS/GRC tool for one organization's compliance program. Not a replacement for Vanta, Drata, Wiz, or Aikido.</p>
 
-{% if onboarding_complete_count < onboarding_total_count %}
+<div class="alert alert-secondary" role="status">
+  <strong>Readiness stage: {{ readiness_stage_label }}.</strong>
+  {{ readiness_stage_reason }}
+</div>
+
+{% if readiness_stage in ("scope_incomplete", "foundation_incomplete") %}
+<div class="alert alert-info" role="status">
+  <p>
+    Your compliance program isn't fully set up yet — start with onboarding to define scope and build
+    a starter control program before day-to-day readiness tracking is meaningful.
+  </p>
+  <p class="mb-0">Onboarding: {{ onboarding_complete_count }}/{{ onboarding_total_count }} steps complete.</p>
+  <a class="btn btn-sm btn-primary" href="/onboarding">Continue setup</a>
+</div>
+{% elif onboarding_complete_count < onboarding_total_count %}
 <div class="alert alert-info d-flex justify-content-between align-items-center" role="status">
   <span>Onboarding: {{ onboarding_complete_count }}/{{ onboarding_total_count }} steps complete.</span>
   <a class="btn btn-sm btn-primary" href="/onboarding">Continue setup</a>
@@ -14,7 +28,7 @@
 
 <h2>Readiness queue</h2>
 <p class="text-muted">
-  {{ readiness_items|length }} item(s) need attention, computed live from current control, evidence,
+  {{ readiness_item_count }} item(s) need attention, computed live from current control, evidence,
   test, and finding state — never a separately maintained checklist.
 </p>
 <form method="get" action="/" class="mb-3">
@@ -28,21 +42,44 @@
     {% endfor %}
   </select>
 </form>
+
+{% if top_priority_items %}
+<h3>Top priorities</h3>
 <table class="table">
   <thead><tr><th>Category</th><th>Reason</th><th>Due</th><th></th></tr></thead>
   <tbody>
-    {% for item in readiness_items %}
+    {% for item in top_priority_items %}
     <tr>
       <td>{{ readiness_categories.get(item.category, item.category) }}</td>
       <td>{{ item.reason }}</td>
       <td>{{ item.due_on or "—" }}</td>
       <td><a href="{{ item.link }}">Resolve</a></td>
     </tr>
-    {% else %}
-    <tr><td colspan="4">Nothing needs attention right now.</td></tr>
     {% endfor %}
   </tbody>
 </table>
+{% endif %}
+
+{% if remaining_readiness_items %}
+<details>
+  <summary>{{ remaining_readiness_items|length }} more item(s)</summary>
+  <table class="table">
+    <thead><tr><th>Category</th><th>Reason</th><th>Due</th><th></th></tr></thead>
+    <tbody>
+      {% for item in remaining_readiness_items %}
+      <tr>
+        <td>{{ readiness_categories.get(item.category, item.category) }}</td>
+        <td>{{ item.reason }}</td>
+        <td>{{ item.due_on or "—" }}</td>
+        <td><a href="{{ item.link }}">Resolve</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% elif not top_priority_items %}
+<p>Nothing needs attention right now.</p>
+{% endif %}
 
 <div class="stat-row">
   <div class="stat-card">
