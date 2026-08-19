@@ -7,18 +7,15 @@ Every identifier used below is sourced from a real HTTP response — a
 redirect Location, a rendered page's link, or the same register-grid JSON
 API the browser's own JS calls — never from a side-channel query against
 `app.state.session_factory` issued from this test's own thread. Building
-this surfaced a confirmed, pre-existing correctness gap in the app's
-SQLite backend (tracked as issue #55, out of scope to fix here): a
-read shortly after a write can transiently miss it, on a real HTTP
-GET-after-POST-redirect cycle too, not only a side-channel DB read — it
-is just measurably rarer on the app's own request path than on a bare
-`session_factory()` peek immediately after a write. Driving everything
-through the app's real request/response cycle therefore reduces this
-flakiness a great deal (it does not eliminate it) and is independently a
-more faithful "inspect rendered state" UAT than peeking at the database
-ever was. One unavoidable exception remains at the very end (the
-evidence-occurrence link has no rendered surface) and uses
-`tests/uat/harness.py::poll_for_visibility`'s bounded retry instead.
+this surfaced a real, pre-existing read-after-write correctness gap,
+mostly filed and fixed as issue #55 (`app/db.py::_invalidate_on_checkin`)
+with a rarer, backend-independent residual tracked as issue #57 — sourcing
+every id from a real HTTP response was always the design intent here for
+UAT faithfulness, and incidentally avoids racing either gap far more
+often than a raw DB peek would. One exception remains at the very end
+(the evidence-occurrence link has no rendered surface anywhere in the
+app) and uses `tests/uat/harness.py::poll_for_visibility`, kept as
+defense-in-depth.
 """
 
 from __future__ import annotations

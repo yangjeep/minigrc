@@ -317,24 +317,30 @@ roughly 1-2.5% of the time in an isolated loop (and far more often under
 a tight write-heavy loop). It reproduces against the exact
 `uvicorn app.main:app` invocation the `Dockerfile`'s `CMD` runs, with a
 single process and a single browser tab; it is not specific to multiple
-workers, multiple tabs, or this harness's own connection usage. PostgreSQL
-is unaffected (MVCC gives immediate committed-read visibility).
+workers, multiple tabs, or this harness's own connection usage.
 
-This is filed as **issue #55** — a real defect in `app/db.py`, out of
-scope for #38 to fix (it needs its own design/verification pass:
-candidate fixes like constraining the SQLite engine to a single physical
-connection have real throughput/concurrency tradeoffs that deserve
-dedicated measurement, not a decision folded into this PR).
+This was filed as **issue #55** — a real defect, largely (not entirely)
+in `app/db.py`, out of scope for #38 to fix. #55's connection-pooling fix
+(`app/db.py::_invalidate_on_checkin`; see `tests/test_sqlite_read_after_write.py`
+and #55's own worklog) shipped and reduced the miss rate by roughly
+10-40x, but a rarer residual turned out to be a separate,
+backend-independent FastAPI response-vs-commit-ordering behavior, filed
+as **issue #57**. The original "PostgreSQL is unaffected" claim in this
+document was based on an assumption (MVCC gives immediate committed-read
+visibility across connections) that only rules out the SQLite-pooling
+portion of the mechanism — #57's residual has not been verified either
+way against PostgreSQL, and #57's own acceptance criteria call that out
+explicitly.
 
-Two changes in this PR exist because of that finding:
+Two changes in this PR exist because of the original finding:
 
 - Every scenario in §6 sources ids from real HTTP responses (redirects,
   rendered links, the register-grid JSON API) rather than a
   `session_factory()` side-channel read — this was always the intended
   design (§6 as originally written), but the adversarial review confirmed
   *why* it matters beyond faithfulness to real usage: a raw DB peek
-  shortly after a write measurably races the same gap issue #55 describes,
-  just more often than the app's own request path does.
+  shortly after a write measurably races the same gap issues #55/#57
+  describe, just more often than the app's own request path does.
 - The one remaining unavoidable side-channel read (the evidence-occurrence
   link, which has no rendered surface anywhere in the app) uses
   `tests/uat/harness.py::poll_for_visibility`, a small bounded retry —
