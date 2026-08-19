@@ -10,17 +10,26 @@ from app.deps import get_db, require_login
 from app.models import AuditEvent, Framework, Policy, RequirementNote, Risk, User
 from app.onboarding import compute_onboarding_steps
 from app.progress import compute_progress
+from app.readiness import READINESS_CATEGORIES, compute_readiness_queue
 
 router = APIRouter(dependencies=[Depends(require_login)])
 
 
 @router.get("/")
-def dashboard(request: Request, db: Session = Depends(get_db), user: User = Depends(require_login)):
+def dashboard(
+    request: Request,
+    framework_id: str = "",
+    db: Session = Depends(get_db),
+    user: User = Depends(require_login),
+):
     frameworks = db.scalars(
         select(Framework)
         .where(Framework.is_active.is_(True))
         .order_by(Framework.is_primary.desc(), Framework.name)
     ).all()
+
+    framework_id = framework_id.strip() or None
+    readiness_items = compute_readiness_queue(db, framework_id=framework_id)
     progress_list = [compute_progress(f) for f in frameworks]
     incomplete_requirements = sum(p.applicable - p.implemented for p in progress_list)
 
@@ -85,5 +94,8 @@ def dashboard(request: Request, db: Session = Depends(get_db), user: User = Depe
             "recent_audit_events": recent_audit_events,
             "onboarding_complete_count": onboarding_complete_count,
             "onboarding_total_count": len(onboarding_steps),
+            "readiness_items": readiness_items,
+            "readiness_categories": READINESS_CATEGORIES,
+            "selected_framework_id": framework_id or "",
         },
     )
