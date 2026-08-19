@@ -130,6 +130,31 @@ def test_admin_can_promote_user_to_admin(admin_client, app, test_user):
         assert len(events) == 1
 
 
+def test_admin_edit_pins_role_source_to_local(admin_client, app, test_user):
+    """Issue #18: an explicit admin edit always pins role_source to
+    'local', so it wins over the generic-OIDC claim/group mapping flow
+    on the user's next SSO login, even for a user OIDC previously
+    created and marked 'oidc_mapped'."""
+    with app.state.session_factory() as session:
+        user = session.get(User, test_user.id)
+        user.role_source = "oidc_mapped"
+        session.commit()
+
+    edit_page = admin_client.get(f"/admin/users/{test_user.id}/edit")
+    csrf_token = extract_csrf_token(edit_page.text)
+    response = admin_client.post(
+        f"/admin/users/{test_user.id}/edit",
+        data={"role": "reader", "status": "active", "csrf_token": csrf_token},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    with app.state.session_factory() as session:
+        user = session.get(User, test_user.id)
+        assert user.role == "reader"
+        assert user.role_source == "local"
+
+
 def test_admin_can_disable_another_user(admin_client, app, test_user):
     edit_page = admin_client.get(f"/admin/users/{test_user.id}/edit")
     csrf_token = extract_csrf_token(edit_page.text)
