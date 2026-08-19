@@ -67,7 +67,7 @@ def create_user(email: str) -> int:
 
     with session_scope(session_factory) as session:
         is_first_user = session.scalar(select(func.count()).select_from(User)) == 0
-        role = "admin" if is_first_user else "user"
+        role = "admin" if is_first_user else "operator"
         session.add(User(email=normalized, password_hash=hash_password(password), role=role))
 
     print(f"Created user '{normalized}'" + (" as the first (admin) user." if is_first_user else "."))

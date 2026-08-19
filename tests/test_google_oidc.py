@@ -172,6 +172,36 @@ def test_callback_creates_new_user_and_logs_in(mock_exchange, app, client):
 
 
 @patch("app.routers.google_oidc.exchange_code_for_id_token", return_value="fake-id-token")
+def test_callback_creates_second_new_user_with_operator_role(mock_exchange, app, client, test_user):
+    """issue #37: the auto-provisioning role assignment only grants
+    `admin` to the very first user in a fresh deployment. Every
+    subsequent auto-provisioned account gets `operator` (the 1:1
+    successor of the old binary role's `"user"` value), never `admin`."""
+    _enable_google_oidc(app, allowed_domains="allowed.example.com")
+    state, nonce = _start_login(client)
+
+    claims = {
+        "iss": "https://accounts.google.com",
+        "sub": "second-user-subject",
+        "email": "SecondPerson@Allowed.example.com",
+        "email_verified": True,
+        "hd": "allowed.example.com",
+        "nonce": nonce,
+    }
+    with patch("app.google_oidc.google_id_token.verify_oauth2_token", return_value=claims):
+        response = client.get(
+            "/auth/google/callback", params={"code": "abc", "state": state}, follow_redirects=False
+        )
+    assert response.status_code == 303
+
+    with app.state.session_factory() as session:
+        user = session.scalar(select(User).where(User.email == "secondperson@allowed.example.com"))
+        assert user is not None
+        assert user.role == "operator"
+        assert user.status == "active"
+
+
+@patch("app.routers.google_oidc.exchange_code_for_id_token", return_value="fake-id-token")
 def test_callback_links_existing_local_user_by_normalized_email(mock_exchange, app, client, test_user):
     _enable_google_oidc(app)
     state, nonce = _start_login(client)

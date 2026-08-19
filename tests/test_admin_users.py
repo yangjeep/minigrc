@@ -74,7 +74,7 @@ def test_create_user_via_admin(admin_client, app):
     with app.state.session_factory() as session:
         user = session.scalar(select(User).where(User.email == "invited@example.com"))
         assert user is not None
-        assert user.role == "user"
+        assert user.role == "operator"
         assert user.status == "active"
         assert user.password_hash == ""
 
@@ -136,7 +136,7 @@ def test_admin_can_disable_another_user(admin_client, app, test_user):
 
     response = admin_client.post(
         f"/admin/users/{test_user.id}/edit",
-        data={"role": "user", "status": "disabled", "csrf_token": csrf_token},
+        data={"role": "operator", "status": "disabled", "csrf_token": csrf_token},
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -157,7 +157,7 @@ def test_admin_can_approve_pending_user(admin_client, app, test_user):
 
     response = admin_client.post(
         f"/admin/users/{test_user.id}/edit",
-        data={"role": "user", "status": "active", "csrf_token": csrf_token},
+        data={"role": "operator", "status": "active", "csrf_token": csrf_token},
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -190,7 +190,7 @@ def test_cannot_demote_last_active_admin(admin_client, app, admin_user):
 
     response = admin_client.post(
         f"/admin/users/{admin_user.id}/edit",
-        data={"role": "user", "status": "active", "csrf_token": csrf_token},
+        data={"role": "operator", "status": "active", "csrf_token": csrf_token},
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -211,7 +211,7 @@ def test_can_demote_admin_when_another_active_admin_exists(admin_client, app, ad
 
     response = admin_client.post(
         f"/admin/users/{admin_user.id}/edit",
-        data={"role": "user", "status": "active", "csrf_token": csrf_token},
+        data={"role": "operator", "status": "active", "csrf_token": csrf_token},
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -219,4 +219,4 @@ def test_can_demote_admin_when_another_active_admin_exists(admin_client, app, ad
 
     with app.state.session_factory() as session:
         user = session.get(User, admin_user.id)
-        assert user.role == "user"
+        assert user.role == "operator"
