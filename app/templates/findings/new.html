@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}Open a finding · minigrc{% endblock %}
+{% block content %}
+{{ page_header("Open a finding") }}
+<form method="post" action="/findings">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <div class="mb-3">
+    <label class="form-label">Title</label>
+    <input type="text" class="form-control" name="title" required>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Description</label>
+    <textarea class="form-control" name="description"></textarea>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Severity</label>
+    <select class="form-select" name="severity" required>
+      {% for severity in severities %}
+      <option value="{{ severity }}">{{ severity }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Control (optional)</label>
+    <select class="form-select" name="control_id">
+      <option value="">—</option>
+      {% for control in controls %}
+      <option value="{{ control.id }}">{{ control.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Source test id (optional)</label>
+    <input type="text" class="form-control" name="source_test_id" value="{{ selected_source_test_id }}">
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Owner (optional)</label>
+    <select class="form-select" name="owner_person_id">
+      <option value="">—</option>
+      {% for person in people %}
+      <option value="{{ person.id }}">{{ person.display_name or person.email }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Due date (optional)</label>
+    <input type="date" class="form-control" name="due_date">
+  </div>
+  <button type="submit" class="btn btn-primary">Open finding</button>
+</form>
+{% endblock %}

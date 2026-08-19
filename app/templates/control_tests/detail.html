@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}Control test · minigrc{% endblock %}
+{% block content %}
+{{ page_header("Control test") }}
+<dl>
+  <dt>Control</dt><dd>{{ test.control_id }}</dd>
+  <dt>Sample</dt><dd>{{ test.sample_id or "—" }}</dd>
+  <dt>Procedure</dt><dd>{{ test.procedure_description }}</dd>
+  <dt>Performed at</dt><dd>{{ test.performed_at }}</dd>
+  <dt>Result</dt><dd><span class="badge {{ 'bg-danger' if test.result == 'exceptions_noted' else 'bg-success' }}">{{ test.result }}</span></dd>
+  <dt>Notes</dt><dd>{{ test.notes or "—" }}</dd>
+  <dt>Retest of</dt><dd>{% if test.retest_of_test_id %}<a href="/control-tests/{{ test.retest_of_test_id }}">{{ test.retest_of_test_id }}</a>{% else %}—{% endif %}</dd>
+</dl>
+
+<h2>Exceptions</h2>
+<ul>
+  {% for exception in exceptions %}
+  <li>{{ exception.description }}</li>
+  {% else %}
+  <li>None.</li>
+  {% endfor %}
+</ul>
+
+<h2>Retests of this test</h2>
+<ul>
+  {% for retest in retests %}
+  <li><a href="/control-tests/{{ retest.id }}">{{ retest.id }}</a> — {{ retest.result }}</li>
+  {% else %}
+  <li>None yet.</li>
+  {% endfor %}
+</ul>
+
+<h2>Linked evidence</h2>
+<ul>
+  {% for row in linked_evidence %}
+  <li>{{ row.evidence_artifact_version_id }}</li>
+  {% else %}
+  <li>None linked yet.</li>
+  {% endfor %}
+</ul>
+
+<h2>Link evidence</h2>
+<form method="post" action="/control-tests/{{ test.id }}/link-evidence">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <select class="form-select" name="evidence_artifact_version_id" required>
+    {% for version in available_evidence %}
+    <option value="{{ version.id }}">{{ version.original_filename }} (v{{ version.version_number }})</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary mt-2">Link evidence</button>
+</form>
+
+<p><a class="btn btn-outline-secondary" href="/findings/new?source_test_id={{ test.id }}">Open a finding from this test</a></p>
+{% endblock %}

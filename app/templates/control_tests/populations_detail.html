@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}Population · minigrc{% endblock %}
+{% block content %}
+{{ page_header("Test population") }}
+<dl>
+  <dt>Description</dt><dd>{{ population.description or "—" }}</dd>
+  <dt>Criteria note</dt><dd>{{ population.criteria_note or "—" }}</dd>
+  <dt>Frozen at</dt><dd>{{ population.frozen_at }}</dd>
+  <dt>Items</dt><dd>{{ population.items|length }}</dd>
+</dl>
+
+<h2>Samples drawn from this population</h2>
+<ul>
+  {% for sample in samples %}
+  <li>
+    {{ sample.selection_method }} — {{ sample.items|length }} item(s) — {{ sample.selection_rationale }}
+    <a href="/control-tests/new?sample_id={{ sample.id }}">Record a test against this sample</a>
+  </li>
+  {% else %}
+  <li>No samples drawn yet.</li>
+  {% endfor %}
+</ul>
+
+<h2>Draw a sample</h2>
+<form method="post" action="/control-tests/populations/{{ population.id }}/samples">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <div class="mb-3">
+    {% for item in population.items %}
+    <label class="d-block">
+      <input type="checkbox" name="population_item_ids" value="{{ item.id }}">
+      Occurrence {{ item.control_occurrence_id }}
+    </label>
+    {% endfor %}
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Selection method</label>
+    <input type="text" class="form-control" name="selection_method" placeholder="e.g. haphazard" required>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Selection rationale</label>
+    <textarea class="form-control" name="selection_rationale" required></textarea>
+  </div>
+  <button type="submit" class="btn btn-primary">Draw sample</button>
+</form>
+{% endblock %}

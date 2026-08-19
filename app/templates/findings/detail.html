@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}{{ finding.title }} · minigrc{% endblock %}
+{% block content %}
+{{ page_header(finding.title) }}
+<dl>
+  <dt>Status</dt><dd><span class="badge badge-{{ finding.status }}">{{ finding.status }}</span></dd>
+  <dt>Severity</dt><dd>{{ finding.severity }}</dd>
+  <dt>Description</dt><dd>{{ finding.description or "—" }}</dd>
+  <dt>Control</dt><dd>{{ finding.control_id or "—" }}</dd>
+  <dt>Source test</dt><dd>{% if finding.source_test_id %}<a href="/control-tests/{{ finding.source_test_id }}">{{ finding.source_test_id }}</a>{% else %}—{% endif %}</dd>
+  <dt>Owner</dt><dd>{{ finding.owner_person_id or "—" }}</dd>
+  <dt>Due date</dt><dd>{{ finding.due_date or "—" }}</dd>
+  {% if finding.status == "closed" %}
+  <dt>Closure decision</dt><dd>{{ finding.closure_decision }}</dd>
+  <dt>Closure note</dt><dd>{{ finding.closure_note or "—" }}</dd>
+  {% endif %}
+</dl>
+
+<h2>Remediation updates</h2>
+<table class="table">
+  <thead><tr><th>When</th><th>Actor</th><th>Note</th></tr></thead>
+  <tbody>
+    {% for update in updates %}
+    <tr><td>{{ update.created_at }}</td><td>{{ update.actor }}</td><td>{{ update.note }}</td></tr>
+    {% else %}
+    <tr><td colspan="3">No updates yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if finding.status != "closed" %}
+<h3>Add a remediation update</h3>
+<form method="post" action="/findings/{{ finding.id }}/remediation-updates">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <textarea class="form-control mb-2" name="note" required></textarea>
+  <select class="form-select mb-2" name="linked_evidence_artifact_version_id">
+    <option value="">No evidence</option>
+    {% for version in available_evidence %}
+    <option value="{{ version.id }}">{{ version.original_filename }} (v{{ version.version_number }})</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary">Add update</button>
+</form>
+{% endif %}
+
+<h2>Retests</h2>
+<ul>
+  {% for retest in retests %}
+  <li><a href="/control-tests/{{ retest.test_id }}">{{ retest.test_id }}</a></li>
+  {% else %}
+  <li>None yet.</li>
+  {% endfor %}
+</ul>
+
+{% if finding.status == "remediating" %}
+<form method="post" action="/findings/{{ finding.id }}/request-retest">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit" class="btn btn-outline-primary">Request retest</button>
+</form>
+{% endif %}
+
+{% if finding.status == "retesting" %}
+<h3>Record a retest</h3>
+<form method="post" action="/findings/{{ finding.id }}/record-retest">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <select class="form-select mb-2" name="test_id" required>
+    {% for test in candidate_tests %}
+    <option value="{{ test.id }}">{{ test.id }} — {{ test.result }} ({{ test.performed_at }})</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary">Record retest</button>
+</form>
+{% endif %}
+
+{% if finding.status != "closed" %}
+<h2>Close finding</h2>
+<form method="post" action="/findings/{{ finding.id }}/close">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <select class="form-select mb-2" name="decision" required>
+    {% for decision in closure_decisions %}
+    <option value="{{ decision }}">{{ decision }}</option>
+    {% endfor %}
+  </select>
+  <textarea class="form-control mb-2" name="note" placeholder="Closure note"></textarea>
+  <button type="submit" class="btn btn-danger">Close finding</button>
+</form>
+{% endif %}
+{% endblock %}
