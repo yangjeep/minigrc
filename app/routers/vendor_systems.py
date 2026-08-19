@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
-from app.deps import get_db, require_admin, require_login, verify_csrf
+from app.deps import get_db, require_admin, require_login, require_write_access, verify_csrf
 from app.flash import redirect_with_flash
 from app.models import (
     BILLING_FREQUENCIES,
@@ -183,7 +183,12 @@ def _extract_vendor_fields(form: dict) -> dict:
 
 
 @router.post("")
-async def create_vendor(request: Request, db: Session = Depends(get_db), _csrf: None = Depends(verify_csrf)):
+async def create_vendor(
+    request: Request,
+    db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
+    _csrf: None = Depends(verify_csrf),
+):
     form = {k: v for k, v in (await request.form()).items()}
 
     system_name = (form.get("system_name") or "").strip()
@@ -263,7 +268,11 @@ def edit_vendor_form(vendor_id: str, request: Request, db: Session = Depends(get
 
 @router.post("/{vendor_id}/edit")
 async def update_vendor(
-    vendor_id: str, request: Request, db: Session = Depends(get_db), _csrf: None = Depends(verify_csrf)
+    vendor_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
+    _csrf: None = Depends(verify_csrf),
 ):
     vendor = db.get(VendorSystem, vendor_id)
     if vendor is None:
@@ -357,6 +366,7 @@ def create_roster_snapshot(
     request: Request,
     file: UploadFile,
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     vendor = db.get(VendorSystem, vendor_id)

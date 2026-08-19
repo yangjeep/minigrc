@@ -93,6 +93,22 @@ def require_admin(user: User = Depends(require_login)) -> User:
     return user
 
 
+WRITE_ROLES = frozenset({"admin", "operator"})
+
+
+def require_write_access(user: User = Depends(require_login)) -> User:
+    """Require a role that may mutate material compliance state
+    (issue #37): `admin` or `operator`. `reader`/`auditor` are
+    server-side read-only — every route that used to be bare
+    `require_login` for a state-changing action now depends on this
+    instead, so that becoming a reader/auditor is a real, enforced
+    demotion rather than a UI-only convention.
+    """
+    if user.role not in WRITE_ROLES:
+        raise HTTPException(status_code=403, detail="Write access required")
+    return user
+
+
 def verify_csrf(request: Request, csrf_token: str = Form(...)) -> None:
     cookie_value = request.cookies.get(CSRF_COOKIE_NAME)
     if not csrf_tokens_match(cookie_value, csrf_token):

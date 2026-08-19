@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
-from app.deps import get_db, require_admin, require_login, verify_csrf
+from app.deps import get_db, require_admin, require_login, require_write_access, verify_csrf
 from app.flash import redirect_with_flash
 from app.google_drive import (
     GoogleDriveError,
@@ -83,6 +83,7 @@ def create_policy(
     file: UploadFile | None = None,
     change_note: str = Form(""),
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     title = title.strip()
@@ -179,6 +180,7 @@ def update_policy(
     effective_date: str = Form(""),
     next_review_date: str = Form(""),
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     policy = db.get(Policy, policy_id)
@@ -216,6 +218,7 @@ def upload_policy_version(
     file: UploadFile,
     change_note: str = Form(""),
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     policy = db.get(Policy, policy_id)
@@ -264,6 +267,7 @@ def retire_policy(
     policy_id: str,
     request: Request,
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     policy = db.get(Policy, policy_id)

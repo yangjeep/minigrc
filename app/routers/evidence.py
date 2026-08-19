@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
-from app.deps import get_db, require_login, verify_csrf
+from app.deps import get_db, require_login, require_write_access, verify_csrf
 from app.flash import redirect_with_flash
 from app.models import (
     EVIDENCE_STATUSES,
@@ -77,6 +77,7 @@ def map_requirement(
     request: Request,
     requirement_id: str = Form(...),
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     snapshot = db.get(EvidenceSnapshot, evidence_id)
@@ -110,6 +111,7 @@ def map_control(
     request: Request,
     control_id: str = Form(...),
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     snapshot = db.get(EvidenceSnapshot, evidence_id)

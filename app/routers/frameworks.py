@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
 from app.csv_import import CsvTooLargeError, read_csv_upload
-from app.deps import get_db, require_login, verify_csrf
+from app.deps import get_db, require_login, require_write_access, verify_csrf
 from app.flash import redirect_with_flash
 from app.imports import enqueue_and_run_import
 from app.models import (
@@ -88,6 +88,7 @@ def create_framework(
     description: str = Form(""),
     is_placeholder_content: bool = Form(False),
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     name = name.strip()
@@ -146,6 +147,7 @@ def update_framework(
     is_placeholder_content: bool = Form(False),
     is_active: bool = Form(False),
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     framework = db.get(Framework, framework_id)
@@ -193,6 +195,7 @@ def create_requirement(
     summary: str = Form(""),
     display_order: int = Form(0),
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     framework = db.get(Framework, framework_id)
@@ -243,6 +246,7 @@ def import_requirements(
     request: Request,
     file: UploadFile,
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     framework = db.get(Framework, framework_id)
@@ -306,6 +310,7 @@ def update_assessment(
     note_body: str = Form(""),
     mark_reviewed: bool = Form(False),
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     requirement = db.get(FrameworkRequirement, requirement_id)
@@ -374,6 +379,7 @@ def add_note(
     request: Request,
     body: str = Form(...),
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     requirement = db.get(FrameworkRequirement, requirement_id)

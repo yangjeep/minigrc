@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
-from app.deps import get_db, require_admin, require_login, verify_csrf
+from app.deps import get_db, require_admin, require_login, require_write_access, verify_csrf
 from app.flash import redirect_with_flash
 from app.google_drive import GoogleDriveError
 from app.google_workspace_directory import DirectorySyncError, fetch_directory_users, sync_directory_users
@@ -63,6 +63,7 @@ def create_person(
     display_name: str = Form(""),
     employment_status: str = Form("unknown"),
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     normalized = normalize_email(email)
@@ -151,6 +152,7 @@ def update_person(
     display_name: str = Form(""),
     employment_status: str = Form("unknown"),
     db: Session = Depends(get_db),
+    _user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     person = db.get(Person, person_id)

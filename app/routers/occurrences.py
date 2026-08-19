@@ -4,8 +4,8 @@ recording a performance claim against it.
 Kept separate from app/routers/controls.py because these routes are
 addressed by the occurrence's own id, not nested under `/controls/{id}` —
 same reasoning as app/routers/evidence.py being its own router rather than
-folded into controls.py. `require_login`, not `require_admin`: recording
-your own occurrence is individual record-keeping, the same category as
+folded into controls.py. `require_write_access`, not `require_admin`:
+recording your own occurrence is individual record-keeping, the same category as
 `update_assessment` (see
 docs/superpowers/specs/2026-08-15-issue11-control-operations-lifecycle-design.md
 §6).
@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.control_occurrences import link_evidence, perform_occurrence
-from app.deps import get_db, require_login, verify_csrf
+from app.deps import get_db, require_login, require_write_access, verify_csrf
 from app.flash import redirect_with_flash
 from app.models import ControlOccurrence, ControlOccurrenceEvidence, EvidenceSnapshot, Person
 
@@ -76,7 +76,7 @@ def perform(
     evidence_note: str = Form(""),
     evidence_snapshot_id: str = Form(""),
     db: Session = Depends(get_db),
-    user=Depends(require_login),
+    user=Depends(require_write_access),
     _csrf: None = Depends(verify_csrf),
 ):
     occurrence = db.get(ControlOccurrence, occurrence_id)
