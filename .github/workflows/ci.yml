@@ -63,7 +63,18 @@ jobs:
       - name: Run Postgres compatibility and migration tests
         env:
           TEST_DATABASE_URL: postgresql+psycopg://postgres@localhost:5432/minigrc_test
-        run: pytest tests/test_postgres_compat.py -v
+        # -k postgres, not a hardcoded file list: every TEST_DATABASE_URL-
+        # gated test across the whole suite follows the "..._postgres"/
+        # "..._against_postgres" naming convention (see e.g.
+        # test_rbac_migration.py, test_policy_lifecycle_migration.py) —
+        # a hardcoded single-file command silently stops covering new
+        # Postgres-gated tests added in other files. Confirmed by direct
+        # inspection this previously ran ONLY tests/test_postgres_compat.py,
+        # so two already-merged migrations' Postgres-gated tests
+        # (test_rbac_migration.py, test_policy_lifecycle_migration.py)
+        # were never actually exercised against a real Postgres in CI
+        # despite being reported as passing there.
+        run: pytest -k postgres -v
 
       - name: Run headless UAT (PostgreSQL)
         env:
