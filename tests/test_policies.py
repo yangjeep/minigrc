@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import os
+import re
 
 from tests.conftest import extract_csrf_token
+
+_DOWNLOAD_LINK_RE = re.compile(r"/versions/([0-9a-f]{32})/download")
 
 VALID_PDF = b"%PDF-1.4\n%mock pdf content for tests\n%%EOF"
 FAKE_PDF = b"this is not a real pdf"
@@ -150,7 +153,9 @@ def test_immutable_version_numbering_and_history(logged_in_client):
 def test_download_requires_auth_and_has_correct_headers(logged_in_client, app):
     policy_id = _create_policy_with_pdf(logged_in_client)
     detail = logged_in_client.get(f"/policies/{policy_id}")
-    version_id = detail.text.split("/versions/")[1].split("/download")[0]
+    match = _DOWNLOAD_LINK_RE.search(detail.text)
+    assert match is not None, "no version download link found on the policy detail page"
+    version_id = match.group(1)
 
     response = logged_in_client.get(f"/policies/{policy_id}/versions/{version_id}/download")
     assert response.status_code == 200
