@@ -62,6 +62,28 @@ def test_open_finding_creates_a_finding_with_open_status(app):
         assert finding.severity == "high"
 
 
+def test_open_finding_with_a_due_date_stores_a_real_date_object(app):
+    """Regression: _project_opened originally assigned payload["due_date"]
+    (an ISO string, since the event payload is JSON) directly to
+    Finding.due_date without parsing it back into a date object — never
+    caught by #13's own tests because none of them passed a real
+    due_date. Found while adding issue #14's readiness-queue tests,
+    which are the first to open a finding with a due date and then read
+    it back for a date comparison."""
+    with app.state.session_factory() as session:
+        due = datetime.date(2026, 3, 1)
+        finding = open_finding(session, title="x", severity="low", due_date=due)
+        session.commit()
+
+        assert finding.due_date == due
+        assert isinstance(finding.due_date, datetime.date)
+
+        rebuild_finding_projection(session)
+        session.commit()
+        rebuilt = session.get(Finding, finding.id)
+        assert rebuilt.due_date == due
+
+
 def test_remediation_update_transitions_open_to_remediating(app):
     with app.state.session_factory() as session:
         finding = open_finding(session, title="x", severity="low")
