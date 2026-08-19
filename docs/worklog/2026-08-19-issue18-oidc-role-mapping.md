@@ -103,6 +103,50 @@ for the full design/reasoning.
   it cannot create a self-lockout; confirmed the audit detail for a
   mapping change carries only group names, never token/secret material.
 
+## Bug found in CI and fixed (regression-first loop)
+
+**Symptom**: PR #75's `test` CI job failed both new UAT scenarios
+(`tests/uat/test_oidc_role_mapping.py`), while `pytest -q` and the
+targeted UAT run had passed locally beforehand:
+`AssertionError: assert 'admin' == 'reader'` (reading a `User.role`
+right after the admin's pin-the-role POST) and
+`AttributeError: 'NoneType' object has no attribute 'role_claim_name'`
+(reading `OidcProviderSettings` right after the settings-save POST).
+
+**Root cause**: both tests peeked the database directly via a fresh
+`session_factory()` session immediately after an HTTP POST, instead of
+going through the harness's existing `poll_for_visibility` helper
+(`tests/uat/harness.py`) — the documented, already-shipped defense
+against this exact SQLite/FastAPI response-vs-commit-ordering
+read-after-write gap (issues #55/#57). This is a test-infrastructure
+bug, not a defect in #18's own logic — the harness's own docs
+explicitly warn that a raw DB peek races this residual far more often
+than sourcing from a real HTTP response does, and CI's more contended
+runner widened the race window enough to hit it twice in one run,
+where a faster local machine did not (2/2 local passes on the original
+code before the fix, and 6/6 across three additional local reruns after
+it — consistent with a timing-sensitive gap, not a logic bug, in either
+case).
+
+**Fix**: replaced every raw `session_factory()` read-after-a-POST in
+both scenarios with `poll_for_visibility`-backed helpers
+(`_wait_for_user_role`, `_wait_for_oidc_settings`), matching the
+established pattern already used elsewhere in this harness for exactly
+this class of gap. Re-verified 2/2 locally, then 3 additional full
+reruns (6/6 total) after the fix; lint/format clean. Pushed as a fixup
+commit on this same PR before merge — see the bug-fix loop in
+`.agent/LOOP.md` §8.
+
+**Also triaged** (same CI run): an automated background security
+scanner flagged "Authorization (Missing Admin Gate)" on
+`app/routers/admin_authentication.py`. Confirmed false positive — every
+route in that file (including the new `/oidc/roles` ones) is gated by
+the router-level `dependencies=[Depends(require_admin)]`
+(`app/routers/admin_authentication.py:26`), not a per-route parameter;
+`tests/test_admin_oidc_role_mapping.py::test_roles_page_requires_admin`
+already proves this live (403 for a non-admin). Documented on the PR
+rather than silently dismissed.
+
 ## Known deferred/untested paths
 
 See design doc §8: no "un-pin" action to hand a `role_source="local"`
