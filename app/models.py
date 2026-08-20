@@ -161,6 +161,26 @@ class InternalControl(Base):
     # control-operations-lifecycle-design.md §3.3.
     occurrences: Mapped[list[ControlOccurrence]] = relationship(viewonly=True)
     owner_person: Mapped[Person | None] = relationship(viewonly=True)
+    # Issue #42: the control's own governed *definition* history —
+    # distinct from `occurrences` above (the control's recurring
+    # *operational* history). `InternalControl`'s own plain columns
+    # above are left untouched by this relationship/its lifecycle
+    # module — same precedent as `Policy.title`/`description`, which
+    # #31's PolicyVersion lifecycle never syncs back onto Policy either.
+    versions: Mapped[list[InternalControlVersion]] = relationship(
+        back_populates="control",
+        cascade="all, delete-orphan",
+        order_by="InternalControlVersion.version_number.desc()",
+    )
+
+    @property
+    def effective_version(self) -> InternalControlVersion | None:
+        """The control-definition version this app currently treats as
+        operative (issue #42) — the version-level analog of
+        Policy.effective_version. At most one version is ever
+        "effective" at a time, enforced by
+        uq_internal_control_version_one_effective_per_control."""
+        return next((v for v in self.versions if v.lifecycle_status == "effective"), None)
 
 
 CONTROL_STATUSES = ("not_started", "in_progress", "implemented", "needs_review")
@@ -185,6 +205,94 @@ class ControlRequirementMapping(Base):
 
     control: Mapped[InternalControl] = relationship(back_populates="mappings")
     requirement: Mapped[FrameworkRequirement] = relationship(back_populates="mappings")
+
+
+# issue #42: the control-definition-level analog of
+# POLICY_VERSION_LIFECYCLE_STATUSES (#31) — kept as a separate constant
+# even though the values coincide, matching this codebase's existing
+# convention of not sharing a literal tuple object across otherwise-
+# independent domains, so the two lifecycles can evolve independently.
+CONTROL_DEFINITION_LIFECYCLE_STATUSES = (
+    "draft",
+    "in_review",
+    "approved",
+    "effective",
+    "superseded",
+    "withdrawn",
+)
+
+
+class InternalControlVersion(Base):
+    """One immutable, point-in-time snapshot of an InternalControl's own
+    *definition* (issue #42) — distinct from ControlOccurrence (#11),
+    which is the control's recurring *operational* history.
+
+    Fully event-sourced from creation over the
+    "internal_control_version" DomainEvent aggregate (see
+    app/control_definition_lifecycle.py) — unlike PolicyVersion (#31),
+    there is no pre-existing plain-insert use to preserve for this
+    brand-new table (same reasoning EvidenceArtifactVersion's docstring
+    already gives for its own table, #32). Never written to directly
+    outside its projector functions.
+
+    `InternalControl`'s own plain columns (name/description/status/
+    review_frequency) are never synced from this table — they remain
+    the control's own simple identity/display fields, the same
+    precedent Policy.title/description already set relative to
+    PolicyVersion.
+    """
+
+    __tablename__ = "internal_control_versions"
+    __table_args__ = (
+        UniqueConstraint("control_id", "version_number", name="uq_internal_control_version_number"),
+        CheckConstraint(
+            f"lifecycle_status IN {CONTROL_DEFINITION_LIFECYCLE_STATUSES}",
+            name="ck_internal_control_version_lifecycle_status",
+        ),
+        # At most one effective version per control — same partial-
+        # unique-index guard as uq_policy_version_one_effective_per_policy.
+        Index(
+            "uq_internal_control_version_one_effective_per_control",
+            "control_id",
+            unique=True,
+            sqlite_where=text("lifecycle_status = 'effective'"),
+            postgresql_where=text("lifecycle_status = 'effective'"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # == aggregate_id; no default=new_id
+    control_id: Mapped[str] = mapped_column(ForeignKey("internal_controls.id"), nullable=False)
+    version_number: Mapped[int] = mapped_column(nullable=False)
+
+    # The snapshot itself.
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    status_snapshot: Mapped[str] = mapped_column(String(32), nullable=False)
+    review_frequency_snapshot: Mapped[str] = mapped_column(String(32), nullable=False)
+    mapped_requirement_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+
+    # Event-sourced lifecycle — same shape/state machine as PolicyVersion.
+    lifecycle_status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    drafted_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
+    drafted_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    submitted_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    submitted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    review_decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    review_comment: Mapped[str] = mapped_column(Text, default="")
+    effective_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    superseded_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    superseded_by_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("internal_control_versions.id"), nullable=True
+    )
+    withdrawn_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    withdrawn_reason: Mapped[str] = mapped_column(Text, default="")
+
+    control: Mapped[InternalControl] = relationship(back_populates="versions")
+    superseded_by_version: Mapped[InternalControlVersion | None] = relationship(
+        remote_side="InternalControlVersion.id", foreign_keys=[superseded_by_version_id]
+    )
 
 
 CONTROL_PERIOD_STATUSES = ("planned", "active", "closed")
@@ -287,6 +395,15 @@ class ControlOccurrence(Base):
     performed_by_person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
     scope_note: Mapped[str] = mapped_column(Text, default="")
     evidence_note: Mapped[str] = mapped_column(Text, default="")
+    # issue #42: the control-definition version effective at the moment
+    # this occurrence was generated/recorded — NULL for occurrences
+    # created before this feature existed (never retroactively
+    # populated; see app/control_occurrences.py). Once set, this never
+    # changes: a later edit to the control's definition creates a new
+    # InternalControlVersion, it never mutates this reference.
+    control_definition_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("internal_control_versions.id"), nullable=True
+    )
 
     # Denormalized read-convenience timestamps, populated by the projector
     # from the relevant event's recorded_at — not independently
@@ -300,6 +417,7 @@ class ControlOccurrence(Base):
         foreign_keys=[responsible_person_id], viewonly=True
     )
     performed_by: Mapped[Person | None] = relationship(foreign_keys=[performed_by_person_id], viewonly=True)
+    control_definition_version: Mapped[InternalControlVersion | None] = relationship(viewonly=True)
 
 
 class ControlOccurrenceEvidence(Base):
