@@ -12,6 +12,13 @@ from app.audit import record_audit_event
 from app.csv_import import CsvTooLargeError, read_csv_upload
 from app.deps import get_db, require_login, require_write_access, verify_csrf
 from app.flash import redirect_with_flash
+from app.framework_adoption import (
+    FrameworkAdoptionError,
+    get_adoption,
+    list_adoptions,
+    list_upgrade_candidates,
+    upgrade_framework_adoption,
+)
 from app.imports import enqueue_and_run_import
 from app.models import (
     APPLICABILITY_VALUES,
@@ -78,6 +85,60 @@ def list_frameworks(request: Request, db: Session = Depends(get_db)):
 def new_framework_form(request: Request):
     templates = request.app.state.templates
     return templates.TemplateResponse(request, "frameworks/new.html", {})
+
+
+@router.get("/adoptions")
+def list_framework_adoptions(request: Request, db: Session = Depends(get_db)):
+    """Issue #43: which catalog version each framework family currently
+    has adopted, and whether a newer sibling version is available to
+    upgrade to. Registered before /{framework_id} so "adoptions" is never
+    swallowed by that path-param route."""
+    adoptions = list_adoptions(db)
+    candidates_by_family = {a.catalog_family: list_upgrade_candidates(db, a) for a in adoptions}
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request,
+        "frameworks/adoptions.html",
+        {"adoptions": adoptions, "candidates_by_family": candidates_by_family},
+    )
+
+
+@router.post("/adoptions/{catalog_family}/upgrade")
+def upgrade_framework_adoption_route(
+    catalog_family: str,
+    request: Request,
+    to_framework_id: str = Form(...),
+    db: Session = Depends(get_db),
+    user=Depends(require_write_access),
+    _csrf: None = Depends(verify_csrf),
+):
+    adoption = get_adoption(db, catalog_family)
+    if adoption is None:
+        raise HTTPException(status_code=404, detail="No adoption exists for this catalog family")
+    to_framework = db.get(Framework, to_framework_id)
+    if to_framework is None:
+        raise HTTPException(status_code=404, detail="Target framework not found")
+
+    try:
+        upgraded = upgrade_framework_adoption(db, adoption, to_framework, actor_type="user", actor_id=user.id)
+    except FrameworkAdoptionError as exc:
+        return redirect_with_flash("/frameworks/adoptions", str(exc), kind="error")
+
+    db.flush()
+    record_audit_event(
+        db,
+        entity_type="framework_adoption",
+        entity_id=upgraded.id,
+        action="upgrade",
+        detail=(
+            f"Upgraded '{catalog_family}' adoption from framework "
+            f"{upgraded.previous_framework_id} to {upgraded.framework_id}"
+        ),
+        actor=user.email,
+    )
+    return redirect_with_flash(
+        "/frameworks/adoptions", f"Upgraded '{catalog_family}' to {to_framework.name} {to_framework.version}."
+    )
 
 
 @router.post("")
