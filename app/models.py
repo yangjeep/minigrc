@@ -1593,6 +1593,81 @@ class OidcRoleMapping(Base):
         return f"OidcRoleMapping(id={self.id!r}, claim_value={self.claim_value!r}, role={self.role!r})"
 
 
+CONNECTOR_EXECUTION_STATUSES = ("success", "failure", "error")
+CONNECTOR_EXECUTION_TRIGGERS = ("manual", "system")
+
+
+class ConnectorInstance(Base):
+    """One configured instance of a manifest-declared connector
+    (app.connectors.manifest.ConnectorManifest, issue #24) — issue #25's
+    installation/configuration/health state. Mutable, updated in place
+    (like AwsConnection) — plain deployment configuration, not a
+    credential-grant history. `connector_id` matches a
+    ConnectorManifest.connector_id; not a DB foreign key, since
+    manifests are Python objects, not rows.
+
+    `config_json` holds only non-secret config field values.
+    `secret_ref_json` holds `{field_name: secret_id}` for every field
+    the manifest marks `secret=True` — resolved just-in-time via
+    app.secrets.resolve_secret, never stored or returned as plaintext.
+    """
+
+    __tablename__ = "connector_instances"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    connector_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    manifest_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    enabled: Mapped[bool] = mapped_column(default=False)
+    config_json: Mapped[str] = mapped_column(Text, default="{}")
+    secret_ref_json: Mapped[str] = mapped_column(Text, default="{}")
+    last_test_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    last_test_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    last_test_error: Mapped[str] = mapped_column(Text, default="")
+    last_success_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    last_failure_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error_summary: Mapped[str] = mapped_column(Text, default="")
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    def __repr__(self) -> str:
+        return f"ConnectorInstance(id={self.id!r}, connector_id={self.connector_id!r})"
+
+
+class ConnectorExecution(Base):
+    """One invocation attempt of a `ConnectorInstance` — append-only
+    execution history and idempotency ledger (issue #25). A repeated
+    `idempotency_key` for the same instance returns the existing row
+    rather than re-invoking the connector or re-ingesting a fact.
+    """
+
+    __tablename__ = "connector_executions"
+    __table_args__ = (
+        UniqueConstraint(
+            "connector_instance_id", "idempotency_key", name="uq_connector_execution_instance_key"
+        ),
+        CheckConstraint(f"status IN {CONNECTOR_EXECUTION_STATUSES}", name="ck_connector_execution_status"),
+        CheckConstraint(
+            f"triggered_by IN {CONNECTOR_EXECUTION_TRIGGERS}", name="ck_connector_execution_triggered_by"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    connector_instance_id: Mapped[str] = mapped_column(ForeignKey("connector_instances.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    result_summary: Mapped[str] = mapped_column(Text, default="")
+    error_summary: Mapped[str] = mapped_column(Text, default="")
+    triggered_by: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
+    actor_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    started_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"ConnectorExecution(id={self.id!r}, status={self.status!r})"
+
+
 CONNECTION_DB_TYPES = ("postgres", "mysql", "sqlite", "generic")
 CONNECTION_TLS_MODES = ("disable", "prefer", "require", "verify_full")
 CONNECTION_TEST_STATUSES = ("untested", "success", "failure")
