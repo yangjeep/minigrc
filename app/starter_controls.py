@@ -10,9 +10,16 @@ docs/superpowers/specs/2026-08-19-issue30-compliance-scope-onboarding-design.md
 §5. Reuses the plain-row + `record_audit_event` shape
 `app/framework_catalog.py::reconcile_system_catalogs` and
 `app/seed.py::seed_if_empty` already use for the same kind of bootstrap
-action — `InternalControl` design is not event-sourced (only
-`ControlOccurrence` performance facts are, issue #11), so this introduces no
-new precedent.
+action — `InternalControl`'s own plain columns are not event-sourced
+(only `ControlOccurrence` performance facts were, issue #11), so this
+introduces no new precedent for the row itself.
+
+Issue #42 adds one more step per created control: a real, event-sourced
+`InternalControlVersion` bootstrapped straight to "effective" via
+`app.control_definition_lifecycle.bootstrap_initial_effective_version`,
+so every starter control begins with a genuine control-definition
+version an occurrence can reference — not just controls that already
+existed when #42's migration backfill ran.
 """
 
 from __future__ import annotations
@@ -21,6 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
+from app.control_definition_lifecycle import bootstrap_initial_effective_version
 from app.models import ControlRequirementMapping, Framework, FrameworkRequirement, InternalControl
 
 
@@ -60,6 +68,12 @@ def generate_starter_controls_for_framework(
         session.add(control)
         session.flush()
         session.add(ControlRequirementMapping(control_id=control.id, requirement_id=requirement.id))
+        # Flush before deriving the initial version's mapped_requirement_ids
+        # snapshot from control.mappings — session-wide autoflush=False
+        # (app/db.py) means the just-added mapping above would otherwise
+        # not yet be visible to that read.
+        session.flush()
+        bootstrap_initial_effective_version(session, control, actor_type="system")
         detail = (
             f"Generated starter control for requirement '{requirement.reference_code}' ({framework.name})"
         )
