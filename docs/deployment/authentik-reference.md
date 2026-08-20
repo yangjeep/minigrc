@@ -88,13 +88,17 @@ Scope Mapping**, which puts the claim key entirely under your control and
 matches miniGRC's own default expectation exactly:
 
 1. Customization > Property Mappings > Create > **Scope Mapping**.
-2. **Scope name:** `groups` (or reuse an existing scope name already
-   requested — Authentik only includes a scope mapping's claims when its
-   `scope_name` is actually requested by the client; adding `groups` here
-   without also requesting it doesn't take effect. Since miniGRC's
-   requested scopes are fixed to `openid email profile`, the mapping's
-   `scope_name` must be one of those three for its claims to appear in
-   the ID token miniGRC receives).
+2. **Name:** any descriptive label (e.g. `miniGRC Groups Claim`) — this
+   is just Authentik's internal display name for the mapping and has no
+   effect on activation. **Scope name:** `profile` — **not** `groups`.
+   Authentik only includes a scope mapping's claims when its **Scope
+   name** field is actually requested by the client, and miniGRC's
+   requested scopes are fixed to `openid email profile`
+   (`app/oidc.py::LOGIN_SCOPES`); a mapping whose Scope name is `groups`
+   would silently never activate, since miniGRC never requests a
+   `groups` scope. Set Scope name to `profile` (or `email`) — one of the
+   three scopes miniGRC already requests — so this mapping's claims ride
+   along with it.
 3. **Expression** — a starting point to verify/adjust against your
    deployed Authentik version's actual user/group model before relying
    on it (obtained via documentation lookup, not confirmed by direct
@@ -111,8 +115,9 @@ matches miniGRC's own default expectation exactly:
    role rows at `/admin/authentication/oidc/roles`
    (`app/oidc_role_mapping.py`) — e.g. map an Authentik group named
    `minigrc-admins` to miniGRC's `admin` role. An unmapped claim value
-   gets no role (fail-safe/least-privilege — see
-   `app/oidc_role_mapping.py::compute_mapped_role`).
+   defaults to the least-privileged role (`reader`) rather than blocking
+   login outright (fail-safe/least-privilege — see
+   `LEAST_PRIVILEGED_ROLE` and `app/oidc_role_mapping.py::compute_mapped_role`).
 
 `app/oidc.py::OidcIdentity.claims` carries the full verified claim set
 through unmodified — `app/oidc_role_mapping.py::extract_claim_values`
