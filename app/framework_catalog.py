@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit import record_audit_event
+from app.framework_adoption import adopt_framework, get_adoption
 from app.models import Framework, FrameworkRequirement
 from app.requirements import add_requirement
 
@@ -36,6 +37,7 @@ class CatalogRequirement:
 @dataclass(frozen=True)
 class SystemCatalog:
     catalog_key: str
+    catalog_family: str
     name: str
     version: str
     description: str
@@ -51,6 +53,7 @@ class SystemCatalog:
 SYSTEM_CATALOGS: tuple[SystemCatalog, ...] = (
     SystemCatalog(
         catalog_key="iso27001-2022-sample",
+        catalog_family="iso27001",
         name="ISO/IEC 27001:2022 Annex A (sample catalogue)",
         version="2022",
         description=(
@@ -98,6 +101,7 @@ SYSTEM_CATALOGS: tuple[SystemCatalog, ...] = (
     ),
     SystemCatalog(
         catalog_key="soc2-2017-sample",
+        catalog_family="soc2",
         name="SOC 2 Trust Services Criteria — Security (sample catalogue)",
         version="2017 (2022 revised points of focus)",
         description=(
@@ -193,6 +197,7 @@ def _find_or_create_catalog_framework(session: Session, catalog: SystemCatalog) 
         with session.begin_nested():
             framework = Framework(
                 catalog_key=catalog.catalog_key,
+                catalog_family=catalog.catalog_family,
                 name=catalog.name,
                 version=catalog.version,
                 description=catalog.description,
@@ -288,5 +293,14 @@ def reconcile_system_catalogs(session: Session) -> list[Framework]:
                     action="reconcile_create",
                     detail=f"Reconciled requirement '{requirement.reference_code}' for {catalog.catalog_key}",
                 )
+        # Issue #43: auto-adopt a catalog family's FIRST-ever version so
+        # the adoption mechanism reflects reality without requiring a
+        # separate onboarding step. Only when NO adoption exists yet for
+        # this family — if one already exists (whether pointing at this
+        # exact framework or, in the future, a different version), moving
+        # it is a deliberate upgrade action, never an automatic side
+        # effect of routine startup reconciliation.
+        if get_adoption(session, catalog.catalog_family) is None:
+            adopt_framework(session, framework, actor_type="system")
         frameworks.append(framework)
     return frameworks

@@ -63,6 +63,14 @@ class Framework(Base):
     # toggle route yet (see docs/superpowers/specs/2026-08-17-issue12-
     # soc2-primary-framework-design.md §11).
     is_primary: Mapped[bool] = mapped_column(default=False)
+    # Issue #43: "these Framework rows are alternate versions of the same
+    # conceptual catalog" (e.g. "soc2"), distinct from catalog_key, which
+    # conflates family+version into one opaque string. NULL for every
+    # user-created framework, same convention as catalog_key. Set by
+    # app/framework_catalog.py for every SYSTEM_CATALOGS entry; never
+    # mutated once set. See app/framework_adoption.py for what consumes
+    # this.
+    catalog_family: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     requirements: Mapped[list[FrameworkRequirement]] = relationship(
         back_populates="framework",
@@ -2032,3 +2040,34 @@ class AuditEvent(Base):
     detail: Mapped[str] = mapped_column(Text, default="")
     actor: Mapped[str] = mapped_column(String(255), default="system")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class FrameworkAdoption(Base):
+    """Canonical projection over the "framework_adoption" DomainEvent
+    aggregate (issue #43) — NOT the source of truth for history. One row
+    per `Framework.catalog_family`: which version of that catalog family
+    the organization currently treats as its active, adopted version.
+
+    Never touches ControlRequirementMapping/FrameworkRequirement/
+    ControlPeriod rows — those already stay permanently pinned to
+    whichever Framework row they were created against, since nothing in
+    this codebase ever repoints an existing FK (see
+    docs/superpowers/specs/2026-08-20-issue43-catalog-version-pinning-design.md
+    §"Repository-reality check"). This table only tracks which version is
+    "current" going forward.
+    """
+
+    __tablename__ = "framework_adoptions"
+    __table_args__ = (UniqueConstraint("catalog_family", name="uq_framework_adoption_catalog_family"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # == aggregate_id; no default=new_id
+    catalog_family: Mapped[str] = mapped_column(String(32), nullable=False)
+    framework_id: Mapped[str] = mapped_column(ForeignKey("frameworks.id"), nullable=False)
+    previous_framework_id: Mapped[str | None] = mapped_column(ForeignKey("frameworks.id"), nullable=True)
+    adopted_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
+    upgraded_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
+    framework: Mapped[Framework] = relationship(foreign_keys="FrameworkAdoption.framework_id")
+    previous_framework: Mapped[Framework | None] = relationship(
+        foreign_keys="FrameworkAdoption.previous_framework_id"
+    )
