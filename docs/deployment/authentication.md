@@ -1,5 +1,13 @@
 # Authentication: Google OAuth and break-glass recovery
 
+This page covers Google OAuth specifically. For generic, provider-neutral
+OIDC login (Authentik, Keycloak, ZITADEL, Entra ID, Okta, ...) — a
+separate, independent login path configured at
+`/admin/authentication/oidc` — see
+[`authentik-reference.md`](authentik-reference.md) for a worked example
+and [`configuration-contract.md`](configuration-contract.md) for how
+every auth mode composes together.
+
 ## Two ways to sign in, always both available
 
 - **Local email/password** (`app/routers/auth.py`) — the break-glass path.
