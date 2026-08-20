@@ -34,6 +34,7 @@ from app.models import (
 )
 
 SENSITIVE_DESCRIPTION = "Confirmed with jane.doe@example.com over Slack; her employee id is EMP-4471."
+NEUTRAL_DESCRIPTION = "Export covers Q3 access reviews across all in-scope production systems."
 CREDENTIAL_LIKE_SECRET = "sk-abcdefghijklmnopqrstuvwx1234567890"
 
 
@@ -97,19 +98,45 @@ class TestEvidenceArtifactProjection:
 
     def test_opt_in_adds_description_only(self, app):
         with app.state.session_factory() as session:
-            artifact = _make_evidence_artifact(session, description=SENSITIVE_DESCRIPTION)
+            artifact = _make_evidence_artifact(session, description=NEUTRAL_DESCRIPTION)
             opt_in = AiEgressOptIn(actor="ciso@example.com", reason="Drafting an evidence summary for PBC.")
             context = project_evidence_artifact(artifact, opt_in=opt_in)
 
             assert context.included_free_text is True
-            assert context.fields["description"] == SENSITIVE_DESCRIPTION
+            assert context.fields["description"] == NEUTRAL_DESCRIPTION
             # Still never the raw file / storage path, even with opt-in.
             assert "object_key" not in context.fields
             assert "original_filename" not in context.fields
 
+    def test_opt_in_description_containing_pii_is_scrubbed_in_the_context_itself(self, app):
+        """The scrub must apply to `AiPromptContext.fields` at projection
+        time, not only to the audit log — `fields` is what a future #15
+        would actually build a provider request from, so if only the log
+        were scrubbed the real egress would still leak."""
+        with app.state.session_factory() as session:
+            artifact = _make_evidence_artifact(session, description=SENSITIVE_DESCRIPTION)
+            opt_in = AiEgressOptIn(actor="ciso@example.com", reason="Drafting an evidence summary for PBC.")
+            context = project_evidence_artifact(artifact, opt_in=opt_in)
+
+            assert context.fields["description"] == "[redacted-email-like-value]"
+            assert "jane.doe@example.com" not in context.fields["description"]
+
+    def test_title_containing_email_is_scrubbed_in_the_default_projection(self, app):
+        """Tier 1 ('always included') fields are ordinary free-text labels,
+        not typed-for-identity fields, but nothing stops a human from
+        pasting an email into one — this must be caught even without an
+        opt-in, since Tier 1 ships by default."""
+        with app.state.session_factory() as session:
+            artifact = EvidenceArtifact(title="Reviewed by contractor jane.doe@example.com on 2026-01-01")
+            session.add(artifact)
+            session.commit()
+
+            context = project_evidence_artifact(artifact)
+            assert context.fields["title"] == "[redacted-email-like-value]"
+
 
 class TestControlOccurrenceProjection:
-    def _make_occurrence(self, session, *, with_owner: bool = True):
+    def _make_occurrence(self, session, *, with_owner: bool = True, evidence_note: str = "Attached export."):
         owner = None
         if with_owner:
             owner = Person(email="owner@example.com", display_name="Owner Person")
@@ -133,7 +160,7 @@ class TestControlOccurrenceProjection:
             occurred_at=datetime.datetime(2026, 1, 2),
             performed_by_person_id=owner.id if owner else None,
             scope_note="Reviewed access list for Q3.",
-            evidence_note="Attached export; contact jane.doe@example.com for the raw log.",
+            evidence_note=evidence_note,
         )
         session.commit()
         session.refresh(occurrence)
@@ -159,8 +186,19 @@ class TestControlOccurrenceProjection:
 
             assert context.included_free_text is True
             assert context.fields["scope_note"] == "Reviewed access list for Q3."
-            assert "jane.doe@example.com" in context.fields["evidence_note"]  # human-authored text, opted-in
+            assert context.fields["evidence_note"] == "Attached export."
             _assert_no_pii_leak(context.fields, email="owner@example.com", display_name="Owner Person")
+
+    def test_opt_in_note_containing_email_is_scrubbed(self, app):
+        with app.state.session_factory() as session:
+            occurrence = self._make_occurrence(
+                session, evidence_note="Attached export; contact jane.doe@example.com for the raw log."
+            )
+            opt_in = AiEgressOptIn(actor="ciso@example.com", reason="Drafting a control-operation summary.")
+            context = project_control_occurrence(occurrence, opt_in=opt_in)
+
+            assert context.fields["evidence_note"] == "[redacted-email-like-value]"
+            assert "jane.doe@example.com" not in context.fields["evidence_note"]
 
     def test_no_owner_reports_false_not_none_leak(self, app):
         with app.state.session_factory() as session:
@@ -170,14 +208,14 @@ class TestControlOccurrenceProjection:
 
 
 class TestFindingProjection:
-    def _make_finding(self, session) -> Finding:
+    def _make_finding(self, session, *, description: str = NEUTRAL_DESCRIPTION) -> Finding:
         owner = Person(email="finding-owner@example.com", display_name="Finding Owner")
         session.add(owner)
         session.flush()
         finding = Finding(
             id="fnd-test-0001",
             title="MFA not enforced for one contractor",
-            description=SENSITIVE_DESCRIPTION,
+            description=description,
             severity="high",
             status="open",
             owner_person_id=owner.id,
@@ -190,7 +228,7 @@ class TestFindingProjection:
 
     def test_default_excludes_description_and_owner_identity(self, app):
         with app.state.session_factory() as session:
-            finding = self._make_finding(session)
+            finding = self._make_finding(session, description=SENSITIVE_DESCRIPTION)
             context = project_finding(finding)
 
             assert context.fields == {
@@ -209,11 +247,18 @@ class TestFindingProjection:
             finding = self._make_finding(session)
             opt_in = AiEgressOptIn(actor="ciso@example.com", reason="Drafting a management response.")
             context = project_finding(finding, opt_in=opt_in)
-            assert context.fields["description"] == SENSITIVE_DESCRIPTION
+            assert context.fields["description"] == NEUTRAL_DESCRIPTION
             assert context.fields["closure_note"] == ""
             _assert_no_pii_leak(
                 context.fields, email="finding-owner@example.com", display_name="Finding Owner"
             )
+
+    def test_opt_in_description_containing_pii_is_scrubbed(self, app):
+        with app.state.session_factory() as session:
+            finding = self._make_finding(session, description=SENSITIVE_DESCRIPTION)
+            opt_in = AiEgressOptIn(actor="ciso@example.com", reason="Drafting a management response.")
+            context = project_finding(finding, opt_in=opt_in)
+            assert context.fields["description"] == "[redacted-email-like-value]"
 
 
 class TestPolicyProjection:
@@ -243,6 +288,18 @@ class TestPolicyProjection:
 
     def test_opt_in_adds_description_but_never_owner_name(self, app):
         with app.state.session_factory() as session:
+            policy = Policy(title="Access Control Policy", description=NEUTRAL_DESCRIPTION, owner="Jane Doe")
+            session.add(policy)
+            session.commit()
+
+            opt_in = AiEgressOptIn(actor="ciso@example.com", reason="Drafting a policy change summary.")
+            context = project_policy(policy, opt_in=opt_in)
+            assert context.fields["description"] == NEUTRAL_DESCRIPTION
+            assert "owner" not in context.fields
+            assert "Jane Doe" not in json.dumps(dict(context.fields))
+
+    def test_opt_in_description_containing_pii_is_scrubbed(self, app):
+        with app.state.session_factory() as session:
             policy = Policy(
                 title="Access Control Policy", description=SENSITIVE_DESCRIPTION, owner="Jane Doe"
             )
@@ -251,20 +308,37 @@ class TestPolicyProjection:
 
             opt_in = AiEgressOptIn(actor="ciso@example.com", reason="Drafting a policy change summary.")
             context = project_policy(policy, opt_in=opt_in)
-            assert context.fields["description"] == SENSITIVE_DESCRIPTION
-            assert "owner" not in context.fields
-            assert "Jane Doe" not in json.dumps(dict(context.fields))
+            assert context.fields["description"] == "[redacted-email-like-value]"
 
 
 class TestOptInRequiresDeliberateReason:
-    @pytest.mark.parametrize("reason", ["", "   "])
-    def test_blank_reason_rejected(self, reason):
+    @pytest.mark.parametrize("reason", ["", "   ", "​", "﻿", "​​​"])
+    def test_blank_or_invisible_reason_rejected(self, reason):
+        """str.strip() alone does not catch zero-width space (U+200B) or
+        the BOM (U+FEFF) — both are Unicode category Cf (format), not
+        whitespace, so a naive `.strip()` check can be defeated by an
+        invisible-only 'reason' that looks non-empty to a diff/length
+        check but grants no real justification."""
         with pytest.raises(ValueError):
             AiEgressOptIn(actor="ciso@example.com", reason=reason)
+
+    def test_reason_with_invisible_characters_around_real_text_is_accepted(self):
+        # Invisible characters alongside *real* content shouldn't be
+        # over-rejected — only a reason with no visible content at all.
+        AiEgressOptIn(actor="ciso@example.com", reason="​A real reason​")
 
     def test_missing_actor_type_error(self):
         with pytest.raises(TypeError):
             AiEgressOptIn(reason="A real reason")  # actor is required, no silent default
+
+    @pytest.mark.parametrize("bad_reason", [123, None, ["A", "list"]])
+    def test_non_string_reason_raises_type_error_not_attribute_error(self, bad_reason):
+        with pytest.raises(TypeError):
+            AiEgressOptIn(actor="ciso@example.com", reason=bad_reason)
+
+    def test_non_string_actor_raises_type_error(self):
+        with pytest.raises(TypeError):
+            AiEgressOptIn(actor=12345, reason="A real reason")
 
 
 class TestRecordAiEgress:
@@ -297,7 +371,7 @@ class TestRecordAiEgress:
 
     def test_default_vs_opt_in_calls_are_distinguishable_after_the_fact(self, app):
         with app.state.session_factory() as session:
-            artifact = _make_evidence_artifact(session, description=SENSITIVE_DESCRIPTION)
+            artifact = _make_evidence_artifact(session, description=NEUTRAL_DESCRIPTION)
 
             default_context = project_evidence_artifact(artifact)
             default_event = record_ai_egress(session, default_context, task_type="summarize_evidence")
@@ -313,28 +387,126 @@ class TestRecordAiEgress:
             opted_in_payload = json.loads(session.get(AuditEvent, opted_in_event.id).detail)
 
             assert default_payload["included_free_text"] is False
+            assert default_payload["opt_in_reason"] is None
             assert "description" not in default_payload["fields_sent"]
             assert opted_in_payload["included_free_text"] is True
-            assert opted_in_payload["fields_sent"]["description"] == SENSITIVE_DESCRIPTION
+            assert opted_in_payload["opt_in_actor"] == "ciso@example.com"
+            assert opted_in_payload["opt_in_reason"] == "Include full narrative for PBC."
+            assert opted_in_payload["fields_sent"]["description"] == NEUTRAL_DESCRIPTION
+
+    def test_opt_in_reason_is_persisted_independently_of_record_ai_egress_actor(self, app):
+        """The opt-in's actor/reason must not be silently discarded once
+        validated — an auditor needs to see *why* Tier 2 content was
+        included, not only that it was. This is independent of
+        `record_ai_egress`'s own `actor` param, which identifies who/what
+        triggered this particular call and may legitimately differ (e.g.
+        a scheduled job acting on an earlier human decision)."""
+        with app.state.session_factory() as session:
+            artifact = _make_evidence_artifact(session, description=NEUTRAL_DESCRIPTION)
+            opt_in = AiEgressOptIn(actor="ciso@example.com", reason="Include full narrative for PBC.")
+            context = project_evidence_artifact(artifact, opt_in=opt_in)
+
+            # A different actor triggers the actual provider call than the
+            # one who granted the opt-in — both must remain visible.
+            event = record_ai_egress(
+                session, context, task_type="summarize_evidence", actor="scheduled-nag-job"
+            )
+            session.commit()
+
+            stored = session.get(AuditEvent, event.id)
+            assert stored.actor == "scheduled-nag-job"
+            payload = json.loads(stored.detail)
+            assert payload["opt_in_actor"] == "ciso@example.com"
+            assert payload["opt_in_reason"] == "Include full narrative for PBC."
 
     def test_credential_like_content_is_scrubbed_from_the_log(self, app):
         """Defense-in-depth: even if a human pastes something credential-shaped
-        into a free-text field that was legitimately opted in, the persisted
-        audit record does not retain it verbatim. This does not rely on the
-        allowlists (which never include a real secret-shaped column) — it is
-        a belt-and-suspenders check on the logging path itself."""
+        into a free-text field that was legitimately opted in, neither the
+        real egress (`context.fields`) nor the persisted audit record
+        retains it — the whole field value is replaced, not just the
+        matched substring (see test_split_credential_leaves_no_tail below
+        for why partial substitution is unsafe)."""
         with app.state.session_factory() as session:
             artifact = _make_evidence_artifact(
                 session, description=f"Rotated the key: {CREDENTIAL_LIKE_SECRET}"
             )
             opt_in = AiEgressOptIn(actor="ciso@example.com", reason="Summarize rotation evidence.")
             context = project_evidence_artifact(artifact, opt_in=opt_in)
+
+            # The real egress data itself is already scrubbed, not just the log.
+            assert context.fields["description"] == "[redacted-credential-like-value]"
+
             event = record_ai_egress(session, context, task_type="summarize_evidence")
             session.commit()
 
             stored_detail = session.get(AuditEvent, event.id).detail
             assert CREDENTIAL_LIKE_SECRET not in stored_detail
             assert "[redacted-credential-like-value]" in stored_detail
+
+    def test_split_credential_leaves_no_tail_exposed(self, app):
+        """A credential broken across a line by an editor's word-wrap must
+        not leave its tail exposed while the marker falsely signals a full
+        redaction — the whole field value is replaced outright whenever
+        any part of it matches, not just the matched span."""
+        with app.state.session_factory() as session:
+            split_secret = "sk-abcdefghijk\nlmnopqrstuvwx1234567890"
+            artifact = _make_evidence_artifact(session, description=f"Rotated the key: {split_secret}")
+            opt_in = AiEgressOptIn(actor="ciso@example.com", reason="Summarize rotation evidence.")
+            context = project_evidence_artifact(artifact, opt_in=opt_in)
+
+            assert context.fields["description"] == "[redacted-credential-like-value]"
+            assert "lmnopqrstuvwx1234567890" not in context.fields["description"]
+
+    @pytest.mark.parametrize(
+        "secret",
+        [
+            "ghp_" + "a" * 30,
+            "gho_" + "a" * 30,
+            "github_pat_" + "a" * 25,
+            "AIzaSy" + "a" * 25,
+            "xoxb-" + "1" * 15,
+            "AKIA" + "A" * 16,
+            "API Key: abc123xyzsecret",
+            "postgresql://dbuser:hunter2@db.internal:5432/prod",
+        ],
+    )
+    def test_additional_credential_shapes_are_scrubbed(self, app, secret):
+        with app.state.session_factory() as session:
+            artifact = _make_evidence_artifact(session, description=f"Config snippet: {secret}")
+            opt_in = AiEgressOptIn(actor="ciso@example.com", reason="Summarize config evidence.")
+            context = project_evidence_artifact(artifact, opt_in=opt_in)
+            assert context.fields["description"] == "[redacted-credential-like-value]"
+
+    def test_sha256_hash_is_never_mistaken_for_a_credential(self, app):
+        """The scrub must not corrupt Tier 1's own legitimate long hex
+        content-hash field — a generic 'long random string' heuristic
+        would false-positive on exactly this field, which is why the
+        credential patterns are restricted to distinctive prefixes."""
+        with app.state.session_factory() as session:
+            artifact = _make_evidence_artifact(session)
+            context = project_evidence_artifact(artifact)
+            assert context.fields["sha256"] == "a" * 64
+
+    def test_provider_name_and_model_are_scrubbed_at_log_time(self, app):
+        """provider_name/model are not part of AiPromptContext.fields (they
+        describe which provider handled the call, supplied directly by a
+        future caller) — record_ai_egress must scrub them independently."""
+        with app.state.session_factory() as session:
+            artifact = _make_evidence_artifact(session)
+            context = project_evidence_artifact(artifact)
+            event = record_ai_egress(
+                session,
+                context,
+                task_type="summarize_evidence",
+                provider_name=f"careless-provider-{CREDENTIAL_LIKE_SECRET}",
+                model="stub-model",
+            )
+            session.commit()
+
+            stored_detail = session.get(AuditEvent, event.id).detail
+            assert CREDENTIAL_LIKE_SECRET not in stored_detail
+            payload = json.loads(stored_detail)
+            assert payload["provider_name"] == "[redacted-credential-like-value]"
 
     def test_record_ai_egress_has_no_credential_parameter(self):
         """Structural guarantee: this function cannot leak a provider
