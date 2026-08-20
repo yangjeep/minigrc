@@ -19,6 +19,7 @@ from app.control_occurrences import generate_occurrences, perform_occurrence
 from app.digital_tpm import (
     MAX_ESCALATION_LEVEL,
     REMINDER_COOLDOWN,
+    _get_or_create_reminder_state,
     draft_prefill,
     generate_due_reminders,
     generate_observe_narrative,
@@ -32,6 +33,7 @@ from app.models import (
     InternalControl,
     Policy,
 )
+from app.readiness import ReadinessItem
 
 TEST_KEY = Fernet.generate_key().decode()
 
@@ -120,6 +122,46 @@ class TestGenerateObserveNarrative:
         assert execution.status == "error"
         assert execution.error_message == "provider exploded"
         assert "Stage:" in execution.output_text  # still gets the deterministic fact sheet, not blank
+
+
+class TestGetOrCreateReminderStateConcurrency:
+    def test_survives_a_concurrent_insert_race_without_crashing_or_duplicating(self, app):
+        """Regression test for a TOCTOU race: two callers (e.g. a web
+        "Run nag scan" click overlapping a cron-triggered `ai-nag-scan`)
+        could both see no existing AiReminderState row for the same
+        reminder_key and both attempt to insert one. Simulates the race
+        deterministically (no real threads needed) by having this
+        session's own first lookup query trigger a *separate, already-
+        committed* session's insert of the colliding row right before
+        returning — mirroring tests/test_jobs.py's established
+        single-threaded race-simulation pattern."""
+        item = ReadinessItem(
+            category="test_category", reason="test reason", link="/test/link", control_id=None, due_on=None
+        )
+        key = "test_category:/test/link"
+
+        with app.state.session_factory() as session:
+            original_scalar = session.scalar
+            call_count = {"n": 0}
+
+            def racy_scalar(*args, **kwargs):
+                call_count["n"] += 1
+                if call_count["n"] == 1:
+                    with app.state.session_factory() as other_session:
+                        other_session.add(
+                            AiReminderState(reminder_key=key, category="test_category", link="/test/link")
+                        )
+                        other_session.commit()
+                    return None  # simulate this session's read happening before the race was won
+                return original_scalar(*args, **kwargs)
+
+            session.scalar = racy_scalar
+            state = _get_or_create_reminder_state(session, item)
+            assert state.reminder_key == key
+
+        with app.state.session_factory() as verify_session:
+            matches = verify_session.query(AiReminderState).filter(AiReminderState.reminder_key == key).all()
+            assert len(matches) == 1  # no duplicate row from the losing insert attempt
 
 
 class TestGenerateDueReminders:

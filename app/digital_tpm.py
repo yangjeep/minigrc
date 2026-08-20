@@ -33,6 +33,7 @@ import json
 from dataclasses import dataclass
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.ai_egress import (
@@ -180,13 +181,37 @@ def _reminder_key(item: ReadinessItem) -> str:
 
 
 def _get_or_create_reminder_state(session: Session, item: ReadinessItem) -> AiReminderState:
+    """Guards against a concurrent-caller race (e.g. an operator's web
+    "Run nag scan" overlapping a cron-triggered `ai-nag-scan`): if another
+    session already inserted this `reminder_key` between our SELECT and
+    our INSERT, the unique constraint rejects ours — fall back to
+    re-reading its row instead of surfacing an IntegrityError. Uses a
+    SAVEPOINT (`begin_nested`), not a full `session.rollback()`, matching
+    `app/events.py::append_and_project`'s established retry-on-conflict
+    pattern — `generate_due_reminders` loops over many readiness items in
+    one session, so a full rollback here would also discard every
+    already-processed item's `AiTaskExecution`/`AiReminderState` writes
+    from earlier in the same call."""
     key = _reminder_key(item)
     state = session.scalar(select(AiReminderState).where(AiReminderState.reminder_key == key))
-    if state is None:
-        state = AiReminderState(reminder_key=key, category=item.category, link=item.link)
-        session.add(state)
-        session.flush()
-    return state
+    if state is not None:
+        return state
+
+    try:
+        with session.begin_nested():
+            state = AiReminderState(reminder_key=key, category=item.category, link=item.link)
+            session.add(state)
+            session.flush(objects=[state])
+        return state
+    except IntegrityError:
+        state = session.scalar(select(AiReminderState).where(AiReminderState.reminder_key == key))
+        if state is None:
+            # The unique constraint fired for a reason other than a
+            # concurrent winner (e.g. a schema/data inconsistency) —
+            # surface it rather than silently returning None to the
+            # caller, which would crash later with a confusing AttributeError.
+            raise
+        return state
 
 
 def _is_reminder_due(state: AiReminderState, *, now: datetime.datetime) -> bool:

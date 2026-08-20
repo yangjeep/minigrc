@@ -83,6 +83,30 @@ def test_admin_save_rejects_ssrf_risky_base_url(admin_client, app):
         assert session.scalar(select(AiProviderSettings)) is None  # never persisted
 
 
+def test_timeout_seconds_is_capped_server_side(admin_client, app):
+    """The form's max="120" is a client-side hint only — a bypassed/
+    scripted submission must still be capped, so an admin (or a
+    compromised admin session) can't configure an effectively-unbounded
+    provider timeout."""
+    page = admin_client.get("/admin/ai/settings")
+    csrf_token = extract_csrf_token(page.text)
+    admin_client.post(
+        "/admin/ai/settings",
+        data={
+            "enabled": "on",
+            "display_name": "Test",
+            "base_url": "https://api.openai.com/v1",
+            "model": "gpt-4o-mini",
+            "api_key": "",
+            "timeout_seconds": "999999",
+            "csrf_token": csrf_token,
+        },
+    )
+    with app.state.session_factory() as session:
+        row = session.scalar(select(AiProviderSettings))
+        assert row.timeout_seconds == 120
+
+
 def test_blank_api_key_resubmission_keeps_existing_secret(admin_client, app):
     app.state.settings.encryption_key = TEST_KEY
     page = admin_client.get("/admin/ai/settings")

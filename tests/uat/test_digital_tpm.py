@@ -67,9 +67,7 @@ def test_tpm_console_surfaces_a_real_blocker_and_bounded_nag_and_prefill(uat_ser
 
     # 3. Generate the Observe program summary (bounded, explicit action).
     csrf_token = extract_csrf_field(console_page.text)
-    observe_response = client.post(
-        "/ai/tpm/observe", data={"csrf_token": csrf_token}, follow_redirects=True
-    )
+    observe_response = client.post("/ai/tpm/observe", data={"csrf_token": csrf_token}, follow_redirects=True)
     assert observe_response.status_code == 200
     assert "not been submitted anywhere" in observe_response.text  # draft disclaimer, not a mutation
 
@@ -77,9 +75,7 @@ def test_tpm_console_surfaces_a_real_blocker_and_bounded_nag_and_prefill(uat_ser
     # blocker without ever touching the Finding row itself.
     console_page = client.get("/ai/tpm")
     csrf_token = extract_csrf_field(console_page.text)
-    nag_response = client.post(
-        "/ai/tpm/nag-scan", data={"csrf_token": csrf_token}, follow_redirects=True
-    )
+    nag_response = client.post("/ai/tpm/nag-scan", data={"csrf_token": csrf_token}, follow_redirects=True)
     assert nag_response.status_code == 200
     assert "reminder(s) recorded" in nag_response.text
 

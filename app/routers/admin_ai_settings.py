@@ -22,6 +22,8 @@ from app.secrets import create_encrypted_secret
 
 router = APIRouter(prefix="/admin/ai", tags=["admin"], dependencies=[Depends(require_admin)])
 
+MAX_TIMEOUT_SECONDS = 120  # matches the form's own max= attribute; enforced server-side too
+
 
 def _current_row(db: Session) -> AiProviderSettings | None:
     return db.scalar(select(AiProviderSettings).order_by(AiProviderSettings.updated_at.desc()).limit(1))
@@ -83,7 +85,7 @@ def update_ai_settings(
     row.base_url = base_url
     row.model = model.strip()
     row.secret_id = secret_id
-    row.timeout_seconds = max(1, timeout_seconds)
+    row.timeout_seconds = max(1, min(timeout_seconds, MAX_TIMEOUT_SECONDS))
     row.updated_by = admin.email
     db.flush()
     record_audit_event(
