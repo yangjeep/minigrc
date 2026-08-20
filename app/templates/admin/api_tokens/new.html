@@ -1,0 +1,12 @@
+{% extends "admin/base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}New API token · Admin · minigrc{% endblock %}
+{% block admin_content %}
+{{ page_header("New API token", breadcrumbs=[("Admin", "/admin"), ("API Tokens", "/admin/api-tokens")]) }}
+<p class="lede">Issues a read-only bearer token for the MCP server. The token is shown once, immediately after creation — it cannot be retrieved again, only revoked and reissued.</p>
+<form method="post" action="/admin/api-tokens">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label>Name <input type="text" name="name" placeholder="e.g. Claude Desktop" required></label>
+  <button type="submit" class="btn btn-primary mt-2">Create token</button>
+</form>
+{% endblock %}

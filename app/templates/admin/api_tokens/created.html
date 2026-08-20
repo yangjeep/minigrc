@@ -1,0 +1,11 @@
+{% extends "admin/base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}API token created · Admin · minigrc{% endblock %}
+{% block admin_content %}
+{{ page_header("API token created", breadcrumbs=[("Admin", "/admin"), ("API Tokens", "/admin/api-tokens")]) }}
+<div class="alert alert-warning">This token is shown only once. Copy it now — it cannot be displayed again.</div>
+<p><strong>Name:</strong> {{ token.name }}</p>
+<pre class="p-3 bg-body-secondary border rounded" style="white-space: pre-wrap; word-break: break-all;">{{ plaintext }}</pre>
+<p class="text-secondary small">Configure an MCP client with this as an <code>Authorization: Bearer &lt;token&gt;</code> header against the MCP server (started separately via <code>python -m app.cli mcp-server</code>).</p>
+<a href="/admin/api-tokens" class="btn btn-primary mt-2">Done</a>
+{% endblock %}

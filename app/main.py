@@ -24,6 +24,7 @@ from app.framework_catalog import reconcile_system_catalogs
 from app.logging_config import configure_logging
 from app.routers import (
     admin,
+    admin_api_tokens,
     admin_authentication,
     admin_connections,
     admin_jobs,
@@ -88,6 +89,7 @@ ADMIN_NAV_ITEMS: list[tuple[str, str]] = [
     ("Jobs", "/admin/jobs"),
     ("Audit Log", "/admin/audit-log"),
     ("Audit Package", "/admin/audit-package"),
+    ("API Tokens", "/admin/api-tokens"),
 ]
 
 CSRF_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
@@ -218,6 +220,7 @@ def create_app(
     app.include_router(admin_jobs.jobs_register_router)
     app.include_router(admin_authentication.router)
     app.include_router(admin_connections.router)
+    app.include_router(admin_api_tokens.router)
     # placeholders.router registers a catch-all "/{slug}" — it must be
     # included last so it never shadows a more specific route above.
     app.include_router(placeholders.router)
