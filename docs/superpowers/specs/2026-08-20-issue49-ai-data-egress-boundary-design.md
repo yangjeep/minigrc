@@ -144,8 +144,10 @@ class AiEgressOptIn:
 class AiPromptContext:
     entity_type: str
     entity_id: str
-    fields: dict[str, object]  # exactly what would leave the deployment
+    fields: MappingProxyType  # exactly what would leave the deployment, already scrubbed, read-only
     included_free_text: bool  # True only when an AiEgressOptIn was honored
+    opt_in_actor: str | None = None  # who granted the opt-in (independent of record_ai_egress's actor)
+    opt_in_reason: str | None = None  # why — persisted, not discarded after validation (see §6 finding 5)
 
 
 def project_evidence_artifact(artifact, *, opt_in=None) -> AiPromptContext: ...
@@ -165,16 +167,36 @@ def record_ai_egress(
 ) -> AuditEvent: ...
 ```
 
+Every string value a `project_*` function puts into `fields` is passed
+through `_scrub_string` (email-shaped and credential-shaped patterns)
+**before** it is wrapped into the `AiPromptContext` — i.e. before it
+could reach a real provider request, not only before it reaches the
+audit log. This was corrected during adversarial review (§6 below):
+the first version of this module only scrubbed the log copy, which
+would have left the *actual* egress unprotected. A matched value is
+replaced in full, never just the matched substring, so a credential
+split across a line break can't leave a partially-redacted tail exposed
+while the marker falsely signals a full redaction.
+
 `record_ai_egress` is the **only** function that writes a log record,
 and its signature has no credential parameter at all — it cannot leak
-what it never receives. As defense-in-depth against a future field
-accidentally introducing something credential-shaped, its serialized
-detail is passed through a conservative regex scrub
-(`_scrub_credential_like`, matching common API-key/bearer-token shapes)
-before being written. The scrub is belt-and-suspenders, not the primary
+what it never receives. It additionally applies `_scrub_string` to its
+own caller-supplied `task_type`/`provider_name`/`model` strings, since
+those aren't part of `fields` and so aren't covered by the projection-time
+pass above. The scrub throughout is belt-and-suspenders, not the primary
 guarantee — the primary guarantee is tier 1/2's fixed allowlists never
 including a `Secret`/credential field in the first place (verified: no
-entity type in this module has a secret-shaped column).
+entity type in this module has a secret-shaped column), and the
+credential patterns are deliberately restricted to distinctive prefixes
+(OpenAI `sk-`, GitHub `ghp_`/`gho_`/`github_pat_`, Google `AIzaSy`,
+Slack `xox[baprs]-`, AWS `AKIA...`, labeled `api key:`/`Bearer`, and
+`scheme://user:pass@` connection strings) rather than a generic
+high-entropy heuristic — a bare-hex/base64 heuristic would false-positive
+on Tier 1's own legitimate `sha256` field, corrupting real audit data to
+close a gap (Azure OpenAI's prefix-less key format, AWS secret access
+keys) that isn't reliably distinguishable from a content hash by regex
+in the first place. That residual gap is accepted and documented rather
+than "fixed" by a change that would do more harm than good.
 
 `record_ai_egress` writes one `AuditEvent` with
 `entity_type=f"ai_egress:{context.entity_type}"`,
@@ -247,7 +269,63 @@ enforce when its command-handling code exists.
 No headless UAT / no HTTP route: matching #42's own precedent, this is
 a backend-only module with no user-visible surface in this issue.
 
-## 6. Definition of done
+## 6. Adversarial review findings and fixes
+
+An independent adversarial-review pass (per `.agent/LOOP.md` §9) against
+the first version of this module found five real, validated gaps, all
+fixed before merge:
+
+1. **HIGH — Tier 1 "always included" `title`/`control_name` fields are
+   unconstrained free text and could carry PII with no opt-in gate at
+   all** (e.g. a `Finding.title` containing a pasted email). Fixed by
+   moving the scrub to projection time (§3 above) and applying it to
+   every string field, Tier 1 included — closing the concrete leak
+   while keeping the issue's own explicit "control names are default-safe"
+   example intact for the overwhelming normal case where a title is just
+   a label.
+2. **MEDIUM — the original credential scrub only substituted the matched
+   span, so a credential split across a line break left its tail exposed
+   while the marker falsely signaled full redaction.** Fixed by
+   redacting the entire field value whenever any part of it matches
+   (`test_split_credential_leaves_no_tail_exposed`).
+3. **MEDIUM — the credential regex missed common non-OpenAI BYOK/provider
+   credential shapes** (GitHub, Google, Slack, AWS access-key-id,
+   labeled `API Key: value` with a space, connection-string passwords).
+   Fixed by adding distinctive-prefix patterns for each
+   (`test_additional_credential_shapes_are_scrubbed`); a generic
+   prefix-less high-entropy heuristic was deliberately rejected (see §3)
+   because it would corrupt the legitimate `sha256` field
+   (`test_sha256_hash_is_never_mistaken_for_a_credential` proves it
+   doesn't).
+4. **MEDIUM — `AiEgressOptIn`'s non-empty-reason check used `str.strip()`,
+   which does not treat zero-width space (U+200B) or the BOM (U+FEFF) as
+   whitespace, so an invisible-only "reason" defeated the check; a
+   non-string `reason` raised an unrelated `AttributeError` instead of a
+   documented error.** Fixed with a Unicode-category-based check
+   (stripping category C/Z characters before testing for emptiness) and
+   an explicit `isinstance` guard raising `TypeError` for a non-string
+   `actor`/`reason` (`test_blank_or_invisible_reason_rejected`,
+   `test_non_string_reason_raises_type_error_not_attribute_error`).
+5. **MEDIUM — the opt-in's `actor`/`reason` were validated and then
+   discarded; `record_ai_egress` never persisted *why* Tier 2 content
+   was included, undermining the log's value as evidence of a deliberate
+   decision.** Fixed by carrying `opt_in_actor`/`opt_in_reason` on
+   `AiPromptContext` and persisting both in `record_ai_egress`'s detail,
+   independent of that function's own `actor` parameter (which identifies
+   who/what triggered the call and may legitimately differ from who
+   granted the opt-in — e.g. a scheduled job acting on an earlier human
+   decision) (`test_opt_in_reason_is_persisted_independently_of_record_ai_egress_actor`).
+
+No findings for: PII leakage via relationship traversal/`__repr__`/the
+`json.dumps(..., default=str)` fallback (never triggered — every field
+is a pre-stringified scalar); raw file bytes/`object_key`/source ids
+(structurally unreachable); `MappingProxyType` mutability/aliasing
+(solid — the raw dict never escapes a `project_*` function before
+wrapping); `AuditEvent.entity_type` collision with an existing consumer
+(none — the admin audit-log template renders every `entity_type`
+generically and nothing else in the codebase branches on it).
+
+## 7. Definition of done
 
 - A documented, default (metadata-only) data-egress boundary exists,
   covering the concrete entity types a "summarize evidence"/pre-fill

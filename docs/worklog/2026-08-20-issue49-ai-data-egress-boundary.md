@@ -66,24 +66,28 @@ dependency — it is the dependency direction the issue itself specifies.
 
 ## What changed
 
-- `app/ai_egress.py` (new): `AiEgressOptIn` (frozen dataclass, raises
-  `ValueError` on an empty/blank `reason` in `__post_init__`),
-  `AiPromptContext` (frozen dataclass; `fields` is a read-only
-  `MappingProxyType` so a future caller cannot widen what gets sent by
-  mutating an already-built context), `project_evidence_artifact`/
-  `project_control_occurrence`/`project_finding`/`project_policy` (each
-  a fixed Tier 1/Tier 2 allowlist reading directly from the ORM row —
-  none of them accept a `Person` row or call `app/object_storage.py`/
-  `app/storage.py`), and `record_ai_egress` (writes one `AuditEvent`
-  with `entity_type=f"ai_egress:{entity_type}"`, `action="prompt_sent"`,
-  and a JSON `detail` reproducing exactly `fields_sent` and
-  `included_free_text` — no credential parameter exists on this
-  function's signature at all; `_scrub_credential_like` additionally
-  scrubs credential-shaped substrings from the serialized detail as
-  defense-in-depth).
-- `tests/test_ai_egress.py` (new, 18 tests).
+- `app/ai_egress.py` (new): `AiEgressOptIn` (frozen dataclass; rejects a
+  blank/whitespace/invisible-Unicode-only `reason` with `ValueError` and
+  a non-string `actor`/`reason` with `TypeError`), `AiPromptContext`
+  (frozen dataclass; `fields` is a read-only `MappingProxyType` so a
+  future caller cannot widen what gets sent by mutating an already-built
+  context; also carries `opt_in_actor`/`opt_in_reason`),
+  `project_evidence_artifact`/`project_control_occurrence`/
+  `project_finding`/`project_policy` (each a fixed Tier 1/Tier 2
+  allowlist reading directly from the ORM row — none of them accept a
+  `Person` row or call `app/object_storage.py`/`app/storage.py`; every
+  string value is scrubbed for email-/credential-shaped content before
+  being wrapped into the context), and `record_ai_egress` (writes one
+  `AuditEvent` with `entity_type=f"ai_egress:{entity_type}"`,
+  `action="prompt_sent"`, and a JSON `detail` reproducing exactly
+  `fields_sent`, `included_free_text`, `opt_in_actor`, `opt_in_reason` —
+  no credential parameter exists on this function's signature at all;
+  its own `task_type`/`provider_name`/`model` strings get the same scrub).
+- `tests/test_ai_egress.py` (new, 43 tests — see the adversarial-review
+  section below for why the count grew from the initial 18).
 - `docs/superpowers/specs/2026-08-20-issue49-ai-data-egress-boundary-design.md`
-  (new design doc).
+  (new design doc, including a §6 documenting the adversarial-review
+  findings and fixes below).
 
 No schema/migration change; no existing file touched.
 
@@ -108,10 +112,25 @@ No schema/migration change; no existing file touched.
   opt-in call against the same artifact produce audit records
   distinguishable from each other after the fact via `included_free_text`.
 - **Credential-scrub defense-in-depth**: a credential-shaped string
-  planted inside an opted-in free-text field is redacted in the
-  persisted detail; `record_ai_egress`'s signature is asserted to have
-  no `key`/`secret`/`token`/`credential`-named parameter at all (the
+  planted inside an opted-in free-text field is redacted — in
+  `context.fields` itself (the real egress data), not only in the
+  persisted log detail; a credential split across a line break is fully
+  redacted with no tail exposed; eight additional credential shapes
+  (GitHub PAT/OAuth token/fine-grained PAT, Google, Slack, AWS access
+  key id, labeled `API Key: value`, connection-string password) are each
+  scrubbed; the legitimate `sha256` field is proven unaffected;
+  `provider_name` is scrubbed independently at log time.
+  `record_ai_egress`'s signature is asserted to have no
+  `key`/`secret`/`token`/`credential`-named parameter at all (the
   primary guarantee — the scrub is secondary).
+- **Opt-in bypass resistance**: blank, whitespace-only, and
+  invisible-Unicode-only (`U+200B`, `U+FEFF`) reasons are all rejected;
+  a reason with real text surrounded by invisible characters is still
+  accepted; non-string `actor`/`reason` raise `TypeError`.
+- **Opt-in provenance**: `opt_in_actor`/`opt_in_reason` are persisted
+  into the audit log, independent of `record_ai_egress`'s own `actor`
+  parameter (a scheduled job can trigger a call on behalf of an earlier
+  human decision without losing who made that decision or why).
 - **Immutability**: attempting to add a key to an already-built
   `AiPromptContext.fields` raises `TypeError` (`MappingProxyType`).
 - **No `project_person` function exists** — asserted directly via
@@ -138,14 +157,56 @@ No schema/migration change; no existing file touched.
 
 ## Security/integrity review
 
-Adversarial review performed against `.agent/LOOP.md` §9's checklist,
-focused on: PII leakage bypass (direct and indirect, including via
-`json.dumps(..., default=str)`), raw-content leakage, credential
-leakage (including whether a careless future caller could smuggle a
-credential through `provider_name`/`model`), opt-in bypass, mutability/
-aliasing of the "immutable" `fields` mapping, audit-log fidelity,
-`AuditEvent.entity_type` collision with any existing consumer, and test
-vacuity. See the following section for findings and disposition.
+An independent adversarial review (subagent, blind to this
+implementation's own reasoning) was run against `.agent/LOOP.md` §9's
+checklist: PII leakage bypass (direct and indirect, including via
+`json.dumps(..., default=str)`), raw-content leakage, credential leakage
+(including whether a careless future caller could smuggle a credential
+through `provider_name`/`model`), opt-in bypass, mutability/aliasing of
+the "immutable" `fields` mapping, audit-log fidelity, `AuditEvent.entity_type`
+collision with any existing consumer, and test vacuity.
+
+**Five real, validated findings, all fixed and regression-tested** (full
+detail and the exact reproduction each finding was validated with is in
+the design doc §6):
+
+1. **HIGH** — Tier 1 "always included" `title`/`control_name` fields are
+   unconstrained free text with no scrub at all, so a pasted email/PII
+   in a finding/artifact title shipped by default with no opt-in gate.
+   Fixed by moving the scrub to projection time and applying it to every
+   string field, Tier 1 included, not only opted-in Tier 2 content.
+2. **MEDIUM** — the credential scrub substituted only the matched span,
+   so a credential split across a line break left its tail exposed while
+   the redaction marker falsely signaled a full redaction. Fixed by
+   redacting the entire field value whenever any part of it matches.
+3. **MEDIUM** — the credential regex covered only OpenAI-style keys and
+   missed GitHub/Google/Slack/AWS-access-key-id shapes and a
+   space-separated `API Key: value` label. Fixed by adding those
+   distinctive prefixes; a generic prefix-less high-entropy heuristic
+   (which would have also caught Azure's bare-hex key format and AWS
+   secret access keys) was deliberately rejected because it would
+   false-positive on and corrupt Tier 1's own legitimate `sha256` field —
+   documented as an accepted, explained gap rather than "fixed" by a
+   change worse than the problem.
+4. **MEDIUM** — `AiEgressOptIn`'s non-empty-reason check used
+   `str.strip()`, which does not treat zero-width space (U+200B) or the
+   BOM (U+FEFF) as whitespace, so an invisible-only "reason" defeated the
+   check; a non-string `reason` raised an unrelated `AttributeError`
+   rather than a documented error. Fixed with a Unicode-category-based
+   emptiness check and an explicit `isinstance` type guard.
+5. **MEDIUM** — the opt-in's `actor`/`reason` were validated and then
+   discarded; the audit log never recorded *why* Tier 2 content was
+   included, only *that* it was. Fixed by carrying `opt_in_actor`/
+   `opt_in_reason` through to `record_ai_egress`'s persisted detail,
+   independent of that function's own `actor` parameter.
+
+No findings for: PII via relationship traversal/`__repr__`/the
+`default=str` fallback (never triggered), raw bytes/`object_key`/source
+ids (structurally unreachable), `MappingProxyType` aliasing (solid —
+verified the raw dict never escapes a `project_*` function before
+wrapping), or `AuditEvent.entity_type` collision (none — grepped every
+consumer; the admin audit-log template renders every `entity_type`
+generically).
 
 ## Known deferred/untested paths
 
