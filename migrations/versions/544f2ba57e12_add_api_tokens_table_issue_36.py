@@ -1,7 +1,7 @@
 """add api_tokens table (issue #36)
 
 Revision ID: 544f2ba57e12
-Revises: bb48a6be0d80
+Revises: 7ea3c156037f
 Create Date: 2026-08-20 08:22:25.210150
 
 """
@@ -13,7 +13,11 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '544f2ba57e12'
-down_revision: Union[str, Sequence[str], None] = 'bb48a6be0d80'
+# Rebased to chain after #43's migration (7ea3c156037f), which merged to
+# main first — both PRs' migrations originally pointed at the same
+# parent (bb48a6be0d80), which would have forked into two Alembic heads
+# if merged independently. See docs/worklog for #36 for detail.
+down_revision: Union[str, Sequence[str], None] = '7ea3c156037f'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
