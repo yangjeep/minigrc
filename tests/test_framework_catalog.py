@@ -72,6 +72,7 @@ def test_find_or_create_catalog_framework_recovers_from_concurrent_insert(app):
     returned — not an uncaught exception that crashes startup."""
     catalog = SystemCatalog(
         catalog_key="race-test-catalog",
+        catalog_family="race-test-family",
         name="Race Test Catalog",
         version="1",
         description="",
