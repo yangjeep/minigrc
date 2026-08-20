@@ -10,6 +10,8 @@ tests/test_evidence_artifacts_routes.py).
 
 from __future__ import annotations
 
+import ast
+import re
 import shutil
 from pathlib import Path
 
@@ -19,6 +21,7 @@ from cryptography.fernet import Fernet
 from moto import mock_aws
 
 from app.backup import (
+    _PROJECTION_REBUILDERS,
     BackupError,
     BackupManifest,
     EvidenceObjectRecord,
@@ -234,6 +237,7 @@ def test_full_backup_restore_verify_cycle(tmp_path, s3_settings):
         "control_test",
         "compliance_scope",
         "finding",
+        "framework_adoption",
     }
     assert report.projection_errors == ()
     assert report.decryption_check == "ok"
@@ -290,3 +294,39 @@ def test_verify_restore_catches_corrupted_evidence(tmp_path, s3_settings):
 
     assert manifest.evidence_objects[0].object_key in report.evidence_mismatched_keys
     assert report.passed is False
+
+
+def test_projection_rebuilder_registry_has_no_silent_gaps():
+    """Every event-sourced projection in this codebase follows the same
+    naming convention: a top-level `rebuild_*_projection(session)`
+    function in its own module (see e.g. app/policy_lifecycle.py,
+    app/control_occurrences.py, app/framework_adoption.py). `verify_restore`
+    only rebuilds/verifies whichever projections are registered in
+    `_PROJECTION_REBUILDERS` — a new projection module that forgets to
+    register itself here would silently never be checked after a
+    restore. Statically scans every module under app/ for a function
+    matching that naming convention (via `ast`, not import, so this test
+    has no import-order/side-effect risk) and asserts each one is a
+    registered value, so this exact class of gap is caught automatically
+    for any future projection, not just retroactively for one.
+    """
+    # `rebuild_(.+)_projection` (a non-empty middle segment) — deliberately
+    # excludes app/events.py's generic `rebuild_projection` primitive
+    # (no middle segment), which every aggregate-specific rebuilder above
+    # is itself implemented on top of, not a registrable projection.
+    name_pattern = re.compile(r"rebuild_(.+)_projection$")
+    app_dir = Path(__file__).resolve().parent.parent / "app"
+    found_names: set[str] = set()
+    for path in app_dir.glob("*.py"):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and name_pattern.fullmatch(node.name):
+                found_names.add(node.name)
+
+    registered_names = {fn.__name__ for fn in _PROJECTION_REBUILDERS.values()}
+    missing = found_names - registered_names
+    assert not missing, (
+        f"Projection rebuilder(s) {sorted(missing)} exist but are not registered in "
+        "app/backup.py's _PROJECTION_REBUILDERS — verify_restore would silently skip "
+        "rebuilding/verifying them after a restore."
+    )
