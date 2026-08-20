@@ -1,0 +1,59 @@
+{
+  "registry_version": 1,
+  "entries": [
+    {
+      "connector_id": "aws_cloudtrail_iam",
+      "display_name": "AWS CloudTrail + IAM posture",
+      "publisher": "minigrc",
+      "version": "1.0.0",
+      "capabilities": ["configuration.snapshot"],
+      "required_permissions": ["cloudtrail:DescribeTrails", "iam:GenerateCredentialReport"],
+      "supported_auth_methods": ["ambient_credentials", "assume_role"],
+      "config_schema": [
+        {"name": "account_label", "type": "str", "required": true, "secret": false},
+        {"name": "expected_account_id", "type": "str", "required": false, "secret": false},
+        {"name": "role_arn", "type": "str", "required": false, "secret": false},
+        {"name": "external_id", "type": "str", "required": false, "secret": true},
+        {"name": "regions", "type": "str", "required": false, "secret": false}
+      ],
+      "min_core_contract_version": 1,
+      "max_core_contract_version": null,
+      "verification_status": "official",
+      "package_location": "app.connectors.adapters:aws_manifest",
+      "checksum_sha256": null,
+      "deprecated": false
+    },
+    {
+      "connector_id": "google_drive",
+      "display_name": "Google Drive",
+      "publisher": "minigrc",
+      "version": "1.0.0",
+      "capabilities": ["file.capture"],
+      "required_permissions": ["drive.readonly"],
+      "supported_auth_methods": ["oauth2"],
+      "config_schema": [],
+      "min_core_contract_version": 1,
+      "max_core_contract_version": null,
+      "verification_status": "official",
+      "package_location": "app.connectors.adapters:google_drive_manifest",
+      "checksum_sha256": null,
+      "deprecated": false
+    },
+    {
+      "connector_id": "google_workspace",
+      "display_name": "Google Workspace Directory",
+      "publisher": "minigrc",
+      "version": "1.0.0",
+      "capabilities": ["identity.population"],
+      "required_permissions": ["admin.directory.user.readonly"],
+      "supported_auth_methods": ["oauth2"],
+      "config_schema": [],
+      "min_core_contract_version": 1,
+      "max_core_contract_version": null,
+      "verification_status": "official",
+      "package_location": "app.connectors.adapters:workspace_directory_manifest",
+      "checksum_sha256": null,
+      "deprecated": false
+    }
+  ]
+}
