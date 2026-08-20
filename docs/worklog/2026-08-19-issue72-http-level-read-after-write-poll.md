@@ -82,3 +82,37 @@ the same class of flake until it independently hits CI's higher-
 contention environment. Not attempting a blanket audit of every existing
 UAT file in this fix — scoped to the two files with an actual observed
 or closely-related failure.
+
+## Addendum (same day): a third recurrence, and a more robust fix
+
+Despite the `poll_for_visibility`-before-backfill fix above,
+`test_stage_progresses_and_regresses_with_real_state` failed a **third**
+time in PR #78's (issue #24, unrelated) CI run, with the identical
+symptom (`'Foundation incomplete' == 'Operating controls'`). A rerun
+with zero code changes passed cleanly — confirming this remained a
+genuine timing race, not a logic bug, but also proving the previous fix
+reduced rather than eliminated the failure rate.
+
+Re-reading `app/onboarding.py`/`app/readiness.py` confirmed the stage
+logic itself is correct (`assign_owners` is complete only when no
+control has both an empty `owner` and no `owner_person_id`); the
+remaining exposure was structural: the owner-backfill step was still a
+**raw DB write from an entirely separate connection** (the test's own
+`session_factory()`), which the subsequent `_current_stage` HTTP read
+then had to race across *two* hops (the original POST's commit, then
+the test's own raw commit) rather than one.
+
+**Real fix**: replaced the raw DB peek-and-write with the real register
+API the app itself exposes — `GET /api/registers/controls` (retried
+under the same bounded-poll pattern as `_assert_stage_eventually`, since
+listing immediately after the generate-starter-controls POST is the
+same cross-request race) followed by `PATCH
+/api/registers/controls/{id}` (matching the exact pattern already
+proven in `tests/uat/test_readiness_dashboard.py`) to assign each
+owner. This collapses the double-hop into the same single, already-
+mitigated "GET/PATCH shortly after a POST" shape every other step in
+this test already handles correctly — no more out-of-band raw session
+write for the test to reconcile against the server's own view at all.
+5/5 local reruns pass after this change (up from the previous fix's 3/3
+— not proof of elimination given the race can't be forced locally, but
+consistent with removing a genuine additional hop).

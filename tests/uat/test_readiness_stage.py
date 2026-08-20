@@ -12,14 +12,12 @@ import re
 import time
 
 import pytest
-from sqlalchemy import select
 
-from app.models import InternalControl
 from tests.uat.harness import (
     UAT_PASSWORD,
     create_uat_user,
+    csrf_header_value,
     extract_csrf_field,
-    poll_for_visibility,
     redirect_path,
 )
 
@@ -106,19 +104,35 @@ def test_stage_progresses_and_regresses_with_real_state(uat_server, uat_client):
     assert generate_response.status_code == 303
     assert "flash_kind=error" not in generate_response.headers["location"]
 
-    # Wait for the just-created controls to actually be visible before
-    # backfilling owners — the same #57 residual (see
-    # _assert_stage_eventually's docstring) can otherwise make this
-    # raw DB peek race the POST's own commit and silently back-fill
-    # nothing, which then reads as a confusing downstream stage
-    # mismatch rather than a visibility gap in this peek itself.
-    poll_for_visibility(session_factory, lambda s: s.scalars(select(InternalControl)).all() or None)
+    # Assign owners through the real register API (not a raw DB peek) —
+    # a GET immediately after the generate-starter-controls POST is
+    # exactly the cross-request read-after-write shape
+    # _assert_stage_eventually already guards against (issue #57's
+    # residual), so retry the *listing* itself rather than assuming the
+    # first GET already sees every just-created control. A raw DB peek
+    # here previously raced that same POST's commit from an entirely
+    # separate connection and silently back-filled nothing (issue #72).
+    deadline = time.monotonic() + _STAGE_POLL_TIMEOUT_SECONDS
+    while True:
+        controls = client.get("/api/registers/controls").json()
+        if controls:
+            break
+        assert time.monotonic() <= deadline, "no controls became visible after generating starter controls"
+        time.sleep(_STAGE_POLL_INTERVAL_SECONDS)
 
-    with session_factory() as session:
-        for control in session.scalars(select(InternalControl)).all():
-            if not control.owner and control.owner_person_id is None:
-                control.owner = "security@example.com"
-        session.commit()
+    for row in controls:
+        # Starter-generated controls always start with no owner of any
+        # kind (app.starter_controls.generate_starter_controls_for_framework
+        # never sets owner/owner_person_id) — the register API doesn't
+        # expose owner_person_id, so checking the plain-text `owner`
+        # field alone is sufficient and correct for this scenario.
+        if not row["owner"]:
+            patch_response = client.patch(
+                f"/api/registers/controls/{row['id']}",
+                json={"expected_updated_at": row["updated_at"], "fields": {"owner": "security@example.com"}},
+                headers={"X-CSRF-Token": csrf_header_value(client)},
+            )
+            assert patch_response.status_code == 200, patch_response.text
 
     _assert_stage_eventually(client, "Operating controls")
 
