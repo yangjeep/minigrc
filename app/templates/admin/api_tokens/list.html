@@ -1,0 +1,49 @@
+{% extends "admin/base.html" %}
+{% from "_page_header.html" import page_header %}
+{% from "_states.html" import empty_state %}
+{% block title %}API Tokens · Admin · minigrc{% endblock %}
+{% block admin_content %}
+{{ page_header("API Tokens", breadcrumbs=[("Admin", "/admin")], action_label="New token", action_href="/admin/api-tokens/new") }}
+<p class="lede">Read-only bearer tokens for the MCP server (issue #36) — external agents use these to inspect program state. No token here can approve, attest, or mutate anything.</p>
+{% if not tokens %}
+{{ empty_state("No API tokens yet. Use \"New token\" to issue one.", icon="key") }}
+{% else %}
+<table class="table">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Scope</th>
+      <th>Created</th>
+      <th>Last used</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for token in tokens %}
+    <tr>
+      <td>{{ token.name }}</td>
+      <td>{{ token.scope }}</td>
+      <td>{{ token.created_at.isoformat() }}</td>
+      <td>{{ token.last_used_at.isoformat() if token.last_used_at else "never" }}</td>
+      <td>
+        {% if token.revoked_at %}
+        <span class="badge text-bg-secondary">revoked</span>
+        {% else %}
+        <span class="badge text-bg-success">active</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if not token.revoked_at %}
+        <form method="post" action="/admin/api-tokens/{{ token.id }}/revoke" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+          <button type="submit" class="btn btn-sm btn-outline-danger">Revoke</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
