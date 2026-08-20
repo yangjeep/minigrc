@@ -11,6 +11,13 @@
 </div>
 {% endif %}
 
+{% if request.state.user.role in ("admin", "operator") %}
+<form method="post" action="/evidence-artifacts/{{ artifact.id }}/ai-draft-description" class="mb-2">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit" class="btn btn-secondary btn-sm">Draft description with AI</button>
+</form>
+{% endif %}
+
 <h2>Versions</h2>
 <table>
   <thead>

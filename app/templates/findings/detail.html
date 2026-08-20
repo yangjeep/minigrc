@@ -17,6 +17,13 @@
   {% endif %}
 </dl>
 
+{% if request.state.user.role in ("admin", "operator") %}
+<form method="post" action="/findings/{{ finding.id }}/ai-draft-response" class="mb-2">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit" class="btn btn-secondary btn-sm">Draft response with AI</button>
+</form>
+{% endif %}
+
 <h2>Remediation updates</h2>
 <table class="table">
   <thead><tr><th>When</th><th>Actor</th><th>Note</th></tr></thead>

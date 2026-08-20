@@ -24,6 +24,7 @@ from app.framework_catalog import reconcile_system_catalogs
 from app.logging_config import configure_logging
 from app.routers import (
     admin,
+    admin_ai_settings,
     admin_api_tokens,
     admin_authentication,
     admin_connections,
@@ -38,6 +39,7 @@ from app.routers import (
     control_tests,
     controls,
     dashboard,
+    digital_tpm,
     evidence,
     evidence_artifacts,
     findings,
@@ -78,6 +80,7 @@ NAV_ITEMS = [
     ("Vendors", "/vendors"),
     ("Actions", "/actions"),
     ("Trust Center", "/trust-center/admin"),
+    ("Digital TPM", "/ai/tpm"),
 ]
 
 # Populated as each Admin sub-area ships (Users, Connections, Authentication,
@@ -86,6 +89,7 @@ ADMIN_NAV_ITEMS: list[tuple[str, str]] = [
     ("Users", "/admin/users"),
     ("Connections", "/admin/connections"),
     ("Authentication", "/admin/authentication/google"),
+    ("AI Provider", "/admin/ai/settings"),
     ("Jobs", "/admin/jobs"),
     ("Audit Log", "/admin/audit-log"),
     ("Audit Package", "/admin/audit-package"),
@@ -221,6 +225,8 @@ def create_app(
     app.include_router(admin_authentication.router)
     app.include_router(admin_connections.router)
     app.include_router(admin_api_tokens.router)
+    app.include_router(admin_ai_settings.router)
+    app.include_router(digital_tpm.router)
     # placeholders.router registers a catch-all "/{slug}" — it must be
     # included last so it never shadows a more specific route above.
     app.include_router(placeholders.router)
