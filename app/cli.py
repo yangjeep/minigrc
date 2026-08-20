@@ -334,6 +334,28 @@ def verify_restore_command() -> int:
     return 0
 
 
+def mcp_server_command(host: str, port: int) -> int:
+    """Run the read-only MCP server (issue #36) as its own small ASGI
+    process, sharing the same database as the main app — see
+    app/mcp_server.py's module docstring for why this is not mounted
+    inside app.main.create_app. Lazily imports uvicorn/app.mcp_server so
+    a minimal production install never needs the `mcp` package importable
+    for any other CLI command that doesn't use it."""
+    import uvicorn
+
+    from app.mcp_server import build_fastmcp
+
+    settings = get_settings()
+    engine = build_engine(settings.resolved_engine_target)
+    init_db(engine)
+    session_factory = make_session_factory(engine)
+
+    mcp_server = build_fastmcp(session_factory, settings)
+    print(f"Starting read-only MCP server on http://{host}:{port}{mcp_server.settings.streamable_http_path}")
+    uvicorn.run(mcp_server.streamable_http_app(), host=host, port=port)
+    return 0
+
+
 def uat_command(node_filter: str | None, postgres: bool) -> int:
     """Run the headless UAT suite (issue #38) — one documented command
     for CLI agents/CI, in place of remembering the underlying pytest
@@ -432,6 +454,12 @@ def main(argv: list[str] | None = None) -> int:
         "--postgres", action="store_true", help="Only run scenarios parametrized against Postgres"
     )
 
+    mcp_server_parser = subparsers.add_parser(
+        "mcp-server", help="Run the read-only MCP server for external agents (issue #36)"
+    )
+    mcp_server_parser.add_argument("--host", default="127.0.0.1", help="Bind host (default 127.0.0.1)")
+    mcp_server_parser.add_argument("--port", type=int, default=8100, help="Bind port (default 8100)")
+
     args = parser.parse_args(argv)
 
     if args.command == "migrate":
@@ -456,6 +484,8 @@ def main(argv: list[str] | None = None) -> int:
         return verify_restore_command()
     if args.command == "uat":
         return uat_command(args.node_filter, args.postgres)
+    if args.command == "mcp-server":
+        return mcp_server_command(args.host, args.port)
 
     parser.print_help()
     return 1

@@ -23,6 +23,7 @@ dependencies = [
     "markdown>=3.7",
     "nh3>=0.2",
     "joserfc>=1.0",
+    "mcp>=1.29.0,<2.0.0",
 ]
 
 [project.optional-dependencies]
