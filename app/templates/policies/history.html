@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}History · {{ policy.title }} · minigrc{% endblock %}
+{% block content %}
+<p><a href="/policies/{{ policy.id }}">&larr; {{ policy.title }}</a></p>
+<h1>History: {{ policy.title }}</h1>
+<p class="lede">A chronological record of every lifecycle event across every version of this policy, derived from the immutable event store (issue #45) — distinct from the current-state dashboard and the static audit-package export.</p>
+
+<h2>Reconstruct state as of a past date</h2>
+<form method="get" action="/policies/{{ policy.id }}/history">
+  <label>As of <input type="date" name="as_of" value="{{ as_of }}"></label>
+  <button type="submit">Reconstruct</button>
+</form>
+
+{% if snapshots is not none %}
+<h3>State as of {{ as_of }}</h3>
+{% if not snapshots %}
+<p>No version of this policy existed yet as of this date.</p>
+{% else %}
+<table>
+  <thead>
+    <tr><th>Version</th><th>Lifecycle status</th><th>Effective at</th><th>Superseded at</th></tr>
+  </thead>
+  <tbody>
+    {% for snapshot in snapshots %}
+    <tr>
+      <td>{{ snapshot.version_number }}</td>
+      <td><span class="badge badge-{{ snapshot.lifecycle_status }}">{{ snapshot.lifecycle_status }}</span></td>
+      <td>{{ snapshot.effective_at.isoformat() if snapshot.effective_at else "—" }}</td>
+      <td>{{ snapshot.superseded_at.isoformat() if snapshot.superseded_at else "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+
+<h2>Full event timeline</h2>
+{% for version in policy.versions %}
+<h3>Version {{ version.version_number }}</h3>
+{% set events = events_by_version.get(version.id, []) %}
+{% if not events %}
+<p>No lifecycle events recorded for this version yet.</p>
+{% else %}
+<table>
+  <thead>
+    <tr><th>Event</th><th>Occurred at</th><th>Actor</th></tr>
+  </thead>
+  <tbody>
+    {% for event in events %}
+    <tr>
+      <td>{{ event.event_type }}</td>
+      <td>{{ event.occurred_at.isoformat() }}</td>
+      <td>{{ event.actor_type }}{% if event.actor_id %} ({{ event.actor_id }}){% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endfor %}
+{% endblock %}

@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.control_occurrences import link_evidence, perform_occurrence
 from app.deps import get_db, require_login, require_write_access, verify_csrf
 from app.flash import redirect_with_flash
+from app.history import get_event_history
 from app.models import ControlOccurrence, ControlOccurrenceEvidence, EvidenceSnapshot, Person
 
 router = APIRouter(prefix="/occurrences", tags=["occurrences"], dependencies=[Depends(require_login)])
@@ -64,6 +65,23 @@ def view_occurrence(occurrence_id: str, request: Request, db: Session = Depends(
             "today": today,
             "performed_on_default": performed_on_default,
         },
+    )
+
+
+@router.get("/{occurrence_id}/history")
+def view_occurrence_history(occurrence_id: str, request: Request, db: Session = Depends(get_db)):
+    """Issue #45: the chronological event timeline for one control
+    occurrence, derived from the immutable event store — read-only, a
+    second representative domain alongside policies/{id}/history."""
+    occurrence = db.get(ControlOccurrence, occurrence_id)
+    if occurrence is None:
+        raise HTTPException(status_code=404, detail="Occurrence not found")
+
+    events = get_event_history(db, aggregate_type="control_occurrence", aggregate_id=occurrence.id)
+
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request, "occurrences/history.html", {"occurrence": occurrence, "events": events}
     )
 
 

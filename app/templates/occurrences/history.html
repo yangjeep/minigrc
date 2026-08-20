@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}History · Occurrence · minigrc{% endblock %}
+{% block content %}
+<p><a href="/occurrences/{{ occurrence.id }}">&larr; Occurrence</a></p>
+<h1>History: occurrence for {{ occurrence.control.name }}</h1>
+<p class="lede">A chronological record of every event for this control occurrence, derived from the immutable event store (issue #45).</p>
+{% if not events %}
+<p>No events recorded for this occurrence yet.</p>
+{% else %}
+<table>
+  <thead>
+    <tr><th>Event</th><th>Occurred at</th><th>Actor</th></tr>
+  </thead>
+  <tbody>
+    {% for event in events %}
+    <tr>
+      <td>{{ event.event_type }}</td>
+      <td>{{ event.occurred_at.isoformat() }}</td>
+      <td>{{ event.actor_type }}{% if event.actor_id %} ({{ event.actor_id }}){% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

@@ -3,6 +3,7 @@
 {% block content %}
 <p><a href="/controls/{{ occurrence.control_id }}">&larr; {{ occurrence.control.name }}</a></p>
 <h1>Occurrence</h1>
+<p><a href="/occurrences/{{ occurrence.id }}/history">View event history</a></p>
 <p>
   <strong>Due:</strong> {{ occurrence.due_at or "—" }} &middot;
   <strong>Origin:</strong> {{ occurrence.origin }}

@@ -4,6 +4,7 @@
 <p><a href="/policies">&larr; Policies</a></p>
 <h1>{{ policy.title }}</h1>
 <p class="lede">{{ policy.description }}</p>
+<p><a href="/policies/{{ policy.id }}/history">View history / reconstruct as of a past date</a></p>
 <p>
   <strong>Owner:</strong> {{ policy.owner or "—" }} &middot;
   <strong>Status:</strong> <span class="badge badge-{{ policy.status }}">{{ policy.status }}</span> &middot;
