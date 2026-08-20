@@ -2071,3 +2071,60 @@ class FrameworkAdoption(Base):
     previous_framework: Mapped[Framework | None] = relationship(
         foreign_keys="FrameworkAdoption.previous_framework_id"
     )
+
+
+# Issue #36: a single fixed scope for the first read-only MCP slice — a
+# real multi-value scopes column/table is deliberately not built until a
+# second distinct scope is an actual requirement (RULES.md's "no
+# speculative abstraction" — see the design doc §"Authentication design").
+API_TOKEN_SCOPES = ("read",)
+
+
+class ApiToken(Base):
+    """A service/personal API token for the read-only MCP surface (issue
+    #36) — deliberately separate from `UserSession`: a browser session
+    cookie and an external agent's long-lived bearer token have different
+    lifetimes, revocation UX, and blast radius, and must never be
+    interchangeable.
+
+    Only `token_hash` (SHA-256 of the raw token, via
+    `app.security.hash_session_token` — the same convention as
+    `UserSession.token_hash`) is ever stored; the plaintext exists only
+    once, at `app.api_tokens.create_api_token`'s return value, and is
+    never persisted or logged anywhere.
+
+    `scope` is currently always `"read"` (see `API_TOKEN_SCOPES`) —
+    verified structurally by having no write MCP tool exist at all, not by
+    trusting this column. `revoked_at` set (by an admin, via
+    `app.api_tokens.revoke_api_token`) or `expires_at` passed both cause
+    `app.api_tokens.verify_api_token` to reject the token immediately.
+    """
+
+    __tablename__ = "api_tokens"
+    __table_args__ = (
+        # NOT f"scope IN {API_TOKEN_SCOPES}" — Python's repr of a
+        # single-element tuple ("read",) renders as "('read',)", a
+        # trailing comma that is invalid `IN (...)` SQL on both SQLite
+        # and PostgreSQL (found by actually running this migration
+        # against a real SQLite file before shipping it, per this
+        # repo's migration-testing convention). This explicit join
+        # form is correct for any tuple length, unlike every other
+        # `f"... IN {SOME_TUPLE}"` CheckConstraint in this file, which
+        # all happen to have 2+ members today.
+        CheckConstraint(
+            "scope IN (" + ", ".join(f"'{s}'" for s in API_TOKEN_SCOPES) + ")",
+            name="ck_api_token_scope",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    scope: Mapped[str] = mapped_column(String(16), nullable=False, default="read")
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    last_used_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
+    created_by: Mapped[User] = relationship()
