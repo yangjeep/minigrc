@@ -51,4 +51,17 @@
   <p class="text-secondary small">Which verified ID token claim to read group membership from. Only takes effect once at least one mapping is added below — see "Manage claim/group -&gt; role mappings" above.</p>
   <button type="submit" class="btn btn-primary mt-2">Save</button>
 </form>
+
+<h2 class="mt-4">Identity/role population evidence</h2>
+<p class="lede">
+  Capture a point-in-time snapshot of every account currently linked via this OIDC provider, with each
+  account's currently-mapped role — access-control evidence for a quarterly access review (issue #20).
+  Never captures raw tokens, secrets, or provider group claims; only miniGRC's own record of who is linked
+  and what role they currently have. Attach the resulting snapshot to a control occurrence from the
+  <a href="/evidence">Evidence</a> page, same as any other evidence snapshot.
+</p>
+<form method="post" action="/admin/authentication/oidc/identity-snapshot">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit" class="btn btn-secondary">Capture identity/role population snapshot</button>
+</form>
 {% endblock %}
