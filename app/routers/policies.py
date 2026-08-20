@@ -21,6 +21,7 @@ from app.google_drive import (
     parse_drive_file_id,
 )
 from app.google_drive_approvals import ApprovalsUnavailableError, fetch_approvals, parse_approval
+from app.history import get_event_history, reconstruct_policy_as_of
 from app.models import (
     POLICY_STATUSES,
     InternalControl,
@@ -189,6 +190,42 @@ def view_policy(policy_id: str, request: Request, db: Session = Depends(get_db))
             "statuses": POLICY_STATUSES,
             "approval_snapshots": approval_snapshots,
             "available_controls": available_controls,
+        },
+    )
+
+
+@router.get("/{policy_id}/history")
+def view_policy_history(policy_id: str, request: Request, as_of: str = "", db: Session = Depends(get_db)):
+    """Issue #45: a chronological event timeline across every version of
+    this policy, plus an optional "as of" reconstruction of each
+    version's lifecycle state at a past date — read-only, never mutates
+    anything. Distinct from #33/#14 (current-state) and #34 (static
+    export)."""
+    policy = db.get(Policy, policy_id)
+    if policy is None:
+        raise HTTPException(status_code=404, detail="Policy not found")
+
+    events_by_version = {
+        version.id: get_event_history(db, aggregate_type="policy_version", aggregate_id=version.id)
+        for version in policy.versions
+    }
+
+    as_of_datetime = _parse_date(as_of)
+    snapshots = None
+    if as_of_datetime is not None:
+        snapshots = reconstruct_policy_as_of(
+            db, policy, as_of=datetime.datetime.combine(as_of_datetime, datetime.time.max)
+        )
+
+    templates = request.app.state.templates
+    return templates.TemplateResponse(
+        request,
+        "policies/history.html",
+        {
+            "policy": policy,
+            "events_by_version": events_by_version,
+            "as_of": as_of,
+            "snapshots": snapshots,
         },
     )
 
