@@ -867,6 +867,10 @@ class Person(Base):
     in_scope: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    # Issue #47: set once app.pii_redaction.redact_person_pii has run
+    # for this person — makes redaction idempotent (a second call is a
+    # safe no-op) without inferring it from the email's own shape.
+    pii_redacted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 VENDOR_LIFECYCLE_STATUSES = ("trial", "active", "cancelling", "cancelled")
@@ -1080,6 +1084,10 @@ class User(Base):
     person_id: Mapped[str | None] = mapped_column(ForeignKey("people.id"), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    # Issue #47: set once app.pii_redaction.redact_user_pii has run for
+    # this user — makes redaction idempotent, same convention as
+    # Person.pii_redacted_at.
+    pii_redacted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
     person: Mapped[Person | None] = relationship()
 
