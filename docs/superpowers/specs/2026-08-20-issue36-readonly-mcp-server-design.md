@@ -193,6 +193,13 @@ workflow-authoring guidance applies just as well to an MCP response).
   storage, per-client registration) out of scope for "smallest safe
   slice." Documented as roadmap, not implemented, matching the issue's own
   "OAuth... implemented or explicitly staged."
+- Request-rate limiting: this slice implements only per-tool result caps
+  (`DEFAULT_LIMIT`/`MAX_LIMIT`), not a request-rate limiter of any kind.
+  Acceptable for a single-org, self-hosted deployment with admin-issued
+  tokens; noted here explicitly rather than silently absent, per the
+  issue's "abuse protections appropriate to deployment model" language —
+  a real limiter is a follow-up if this is ever exposed beyond a trusted
+  operator's own agents.
 
 ## Security/privacy checklist against the issue's own list
 
