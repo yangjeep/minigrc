@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.audit import record_audit_event
 from app.control_occurrences import link_evidence_artifact_version
 from app.deps import get_db, require_login, require_write_access, verify_csrf
+from app.digital_tpm import draft_prefill
 from app.evidence_repository import capture_evidence_version
 from app.flash import redirect_with_flash
 from app.models import ControlOccurrence, EvidenceArtifact, EvidenceArtifactVersion
@@ -172,6 +173,23 @@ def view_evidence_artifact(artifact_id: str, request: Request, db: Session = Dep
             "configured": request.app.state.settings.evidence_repository_configured,
         },
     )
+
+
+@router.post("/{artifact_id}/ai-draft-description")
+def draft_evidence_description(
+    artifact_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(require_write_access),
+    _csrf: None = Depends(verify_csrf),
+):
+    artifact = db.get(EvidenceArtifact, artifact_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Evidence artifact not found")
+    execution = draft_prefill(
+        db, request.app.state.settings, task_type="evidence_description", entity=artifact, actor=user.email
+    )
+    return redirect_with_flash(f"/ai/tpm/drafts/{execution.id}", "Draft description generated.")
 
 
 @router.post("/{artifact_id}/versions")

@@ -248,6 +248,39 @@ def project_policy(policy: Policy, *, opt_in: AiEgressOptIn | None = None) -> Ai
     return _context("policy", policy.id, fields, opt_in)
 
 
+def project_readiness_snapshot(
+    stage: str,
+    stage_reason: str,
+    category_counts: dict[str, int],
+    top_item_reasons: tuple[str, ...],
+) -> AiPromptContext:
+    """Aggregate-only projection for #15's Observe capability. Every value
+    here is already system-computed (a readiness stage/category/count, or
+    one of `app/readiness.py`'s own deterministic `reason` strings) —
+    never a user-authored free-text field — so no `AiEgressOptIn` is
+    required or accepted. `top_item_reasons` is joined into a single
+    string (not left as a list) so it is covered by `_context`'s existing
+    per-field scrub, which only inspects top-level string values.
+    """
+    fields: dict[str, object] = {
+        "stage": stage,
+        "stage_reason": stage_reason,
+        "category_counts": dict(category_counts),
+        "top_item_reasons": "\n".join(top_item_reasons),
+    }
+    return _context("readiness_snapshot", "current", fields, opt_in=None)
+
+
+def project_reminder_context(category: str, reason: str, link: str) -> AiPromptContext:
+    """Aggregate-only projection for #15's Nag/Prioritize capabilities:
+    one deterministic `ReadinessItem`'s already-computed fields. Like
+    `project_readiness_snapshot`, these are system-generated strings
+    (dates/counts/fixed category labels), never user-authored narrative,
+    so no opt-in is required."""
+    fields: dict[str, object] = {"category": category, "reason": reason, "link": link}
+    return _context("readiness_item", f"{category}:{link}", fields, opt_in=None)
+
+
 def record_ai_egress(
     session: Session,
     context: AiPromptContext,

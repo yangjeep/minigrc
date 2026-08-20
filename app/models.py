@@ -2128,3 +2128,110 @@ class ApiToken(Base):
     revoked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_by: Mapped[User] = relationship()
+
+
+class AiProviderSettings(Base):
+    """Admin-configured BYOK AI provider settings (issue #15) — the single
+    most recently updated row is the active configuration, same shape as
+    `GoogleOidcSettings`/`OidcProviderSettings`. `base_url`/`model` name an
+    OpenAI-compatible chat-completions endpoint; the API key is never
+    stored directly here: `secret_id` references a `Secret` (encrypted via
+    app/crypto.py), resolved server-side only and never redisplayed after
+    save. See app/ai_provider.py for resolution/SSRF-validation and
+    app/ai_provider_client.py for the actual HTTP call. When no row exists
+    (or the row is disabled), the deployment simply has no usable AI
+    provider — every Digital TPM task degrades gracefully rather than
+    failing (issue #15's hard requirement).
+    """
+
+    __tablename__ = "ai_provider_settings"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    enabled: Mapped[bool] = mapped_column(default=False)
+    display_name: Mapped[str] = mapped_column(String(255), default="")
+    base_url: Mapped[str] = mapped_column(String(500), default="")
+    model: Mapped[str] = mapped_column(String(255), default="")
+    secret_id: Mapped[str | None] = mapped_column(ForeignKey("secrets.id"), nullable=True)
+    timeout_seconds: Mapped[int] = mapped_column(default=30)
+    updated_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    secret: Mapped[Secret | None] = relationship()
+
+    def __repr__(self) -> str:
+        return f"AiProviderSettings(id={self.id!r}, enabled={self.enabled!r})"
+
+
+AI_TASK_TYPES = ("observe", "nag", "prefill")
+AI_TASK_STATUSES = ("ok", "error", "disabled")
+
+
+class AiTaskExecution(Base):
+    """One record of a Digital Compliance TPM task invocation (issue #15):
+    Observe, Nag, or Pre-fill. Advisory execution/audit metadata, not
+    material compliance state (see the design doc §3) — the same "plain
+    row, not an event" treatment as `Job`/`AuditEvent`. `output_text` is
+    the only thing an AI call ever produces that this codebase persists;
+    nothing reads it except this table's own display routes, and no
+    material-mutation domain command ever consumes it (see
+    tests/test_digital_tpm_boundary.py). Never stores hidden
+    chain-of-thought — only the final draft/summary text actually shown
+    to a human.
+    """
+
+    __tablename__ = "ai_task_executions"
+    __table_args__ = (
+        CheckConstraint(f"task_type IN {AI_TASK_TYPES}", name="ck_ai_task_execution_task_type"),
+        CheckConstraint(f"status IN {AI_TASK_STATUSES}", name="ck_ai_task_execution_status"),
+        Index("ix_ai_task_executions_task_type_created_at", "task_type", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    task_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    entity_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Wide enough for a nag/prioritize entity_id, which is a
+    # "{category}:{link}" reminder key (app/digital_tpm.py::_reminder_key),
+    # not just a bare row id.
+    entity_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    provider_name: Mapped[str] = mapped_column(String(255), default="")
+    model: Mapped[str] = mapped_column(String(255), default="")
+    prompt_template_version: Mapped[str] = mapped_column(String(16), default="")
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    included_free_text: Mapped[bool] = mapped_column(default=False)
+    output_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+    def __repr__(self) -> str:
+        return f"AiTaskExecution(id={self.id!r}, task_type={self.task_type!r}, status={self.status!r})"
+
+
+class AiReminderState(Base):
+    """Bounded suppression/escalation bookkeeping for one deterministic
+    reminder key (issue #15's Nag capability) — `reminder_key` is
+    `f"{category}:{link}"` from a `ReadinessItem` (app/readiness.py), so
+    it is stable for as long as the underlying readiness gap exists and
+    naturally stops existing once the gap is resolved (nothing deletes
+    these rows explicitly; a resolved item simply never gets looked up
+    again). Holds no AI output and no free text — see `AiTaskExecution`
+    for the actual reminder message history.
+    """
+
+    __tablename__ = "ai_reminder_states"
+    __table_args__ = (UniqueConstraint("reminder_key", name="uq_ai_reminder_state_reminder_key"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    reminder_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    link: Mapped[str] = mapped_column(String(255), nullable=False)
+    last_sent_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    send_count: Mapped[int] = mapped_column(default=0)
+    escalation_level: Mapped[int] = mapped_column(default=0)
+    suppressed_until: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    def __repr__(self) -> str:
+        return f"AiReminderState(id={self.id!r}, reminder_key={self.reminder_key!r})"

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}Digital Compliance TPM · minigrc{% endblock %}
+{% block content %}
+{{ page_header("Digital Compliance TPM") }}
+<p class="lede">
+  Observes miniGRC's own deterministic readiness state, prioritizes what's blocking audit
+  readiness, and can draft bounded reminders/pre-fill text for human review. Never approves,
+  attests, closes, or accepts risk on its own — see
+  <a href="/admin/ai/settings">AI provider settings</a> to enable AI-authored phrasing (optional;
+  every capability below already works from miniGRC's own facts without it).
+</p>
+
+<h2>Observe</h2>
+<dl>
+  <dt>Readiness stage</dt><dd>{{ summary.stage }} — {{ summary.stage_reason }}</dd>
+  <dt>Open readiness items</dt><dd>{{ summary.total_open_items }}</dd>
+</dl>
+<ul>
+  {% for category, count in summary.category_counts.items() %}
+  <li>{{ category }}: {{ count }}</li>
+  {% endfor %}
+</ul>
+{% if request.state.user.role in ("admin", "operator") %}
+<form method="post" action="/ai/tpm/observe" class="mb-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit" class="btn btn-secondary btn-sm">Generate program summary</button>
+</form>
+{% endif %}
+
+<h2>Prioritize</h2>
+<p class="text-secondary small">The same deterministic readiness queue used elsewhere in miniGRC, soonest-due first.</p>
+<table class="table">
+  <thead><tr><th>Category</th><th>Reason</th><th>Due</th><th>Link</th></tr></thead>
+  <tbody>
+    {% for item in queue %}
+    <tr><td>{{ item.category }}</td><td>{{ item.reason }}</td><td>{{ item.due_on or "—" }}</td><td><a href="{{ item.link }}">Open</a></td></tr>
+    {% else %}
+    <tr><td colspan="4">No open readiness items.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Nag</h2>
+{% if request.state.user.role in ("admin", "operator") %}
+<form method="post" action="/ai/tpm/nag-scan" class="mb-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit" class="btn btn-secondary btn-sm">Run nag scan now</button>
+</form>
+{% endif %}
+<table class="table">
+  <thead><tr><th>Reminder key</th><th>Last sent</th><th>Send count</th><th>Escalation level</th></tr></thead>
+  <tbody>
+    {% for state in reminder_states %}
+    <tr><td>{{ state.reminder_key }}</td><td>{{ state.last_sent_at or "—" }}</td><td>{{ state.send_count }}</td><td>{{ state.escalation_level }}</td></tr>
+    {% else %}
+    <tr><td colspan="4">No reminders sent yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Recent drafts and summaries</h2>
+<table class="table">
+  <thead><tr><th>When</th><th>Task</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+    {% for execution in recent_executions %}
+    <tr><td>{{ execution.created_at }}</td><td>{{ execution.task_type }}</td><td>{{ execution.status }}</td><td><a href="/ai/tpm/drafts/{{ execution.id }}">View</a></td></tr>
+    {% else %}
+    <tr><td colspan="4">No AI task executions yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

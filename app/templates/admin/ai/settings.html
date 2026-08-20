@@ -1,0 +1,43 @@
+{% extends "admin/base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}AI Provider · Admin · minigrc{% endblock %}
+{% block admin_content %}
+{{ page_header("BYOK AI Provider", breadcrumbs=[("Admin", "/admin")]) }}
+<p class="lede">
+  Status:
+  {% if resolved.usable %}
+  <span class="badge text-bg-success">Active</span>
+  {% else %}
+  <span class="badge text-bg-secondary">Not configured</span>
+  {% endif %}
+</p>
+<p class="text-secondary small">
+  Optional. Points the <a href="/ai/tpm">Digital Compliance TPM</a> at an OpenAI-compatible
+  chat-completions endpoint (a hosted provider or a self-hosted gateway). Every capability
+  (Observe/Nag/Pre-fill) works without this configured — it only adds AI-authored phrasing
+  on top of miniGRC's own deterministic facts.
+</p>
+<form method="post" action="/admin/ai/settings">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <div class="form-check mb-2">
+    <input class="form-check-input" type="checkbox" name="enabled" id="enabled" {% if row and row.enabled %}checked{% endif %}>
+    <label class="form-check-label" for="enabled">Enabled</label>
+  </div>
+  <label class="d-block mb-2">Display name
+    <input type="text" name="display_name" value="{{ row.display_name if row else '' }}" placeholder="e.g. OpenAI, Self-hosted vLLM">
+  </label>
+  <label class="d-block mb-2">Base URL (OpenAI-compatible, no trailing /chat/completions)
+    <input type="text" name="base_url" value="{{ row.base_url if row else '' }}" placeholder="https://api.openai.com/v1">
+  </label>
+  <label class="d-block mb-2">Model
+    <input type="text" name="model" value="{{ row.model if row else '' }}" placeholder="gpt-4o-mini">
+  </label>
+  <label class="d-block mb-2">API key
+    <input type="password" name="api_key" placeholder="{{ 'Configured — leave blank to keep' if has_secret else 'Not set (some self-hosted gateways need none)' }}" autocomplete="new-password">
+  </label>
+  <label class="d-block mb-2">Request timeout (seconds)
+    <input type="number" name="timeout_seconds" min="1" max="120" value="{{ row.timeout_seconds if row else 30 }}">
+  </label>
+  <button type="submit" class="btn btn-primary mt-2">Save</button>
+</form>
+{% endblock %}

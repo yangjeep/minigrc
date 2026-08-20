@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.deps import get_db, require_login, require_write_access, verify_csrf
+from app.digital_tpm import draft_prefill
 from app.finding_lifecycle import (
     close_finding,
     open_finding,
@@ -149,6 +150,23 @@ def view_finding(finding_id: str, request: Request, db: Session = Depends(get_db
             "available_evidence": db.scalars(select(EvidenceArtifactVersion)).all(),
         },
     )
+
+
+@router.post("/{finding_id}/ai-draft-response")
+def draft_finding_response(
+    finding_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(require_write_access),
+    _csrf: None = Depends(verify_csrf),
+):
+    finding = db.get(Finding, finding_id)
+    if finding is None:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    execution = draft_prefill(
+        db, request.app.state.settings, task_type="finding_response", entity=finding, actor=user.email
+    )
+    return redirect_with_flash(f"/ai/tpm/drafts/{execution.id}", "Draft response generated.")
 
 
 @router.post("/{finding_id}/remediation-updates")

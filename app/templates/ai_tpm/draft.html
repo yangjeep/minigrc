@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% from "_page_header.html" import page_header %}
+{% block title %}AI Draft · minigrc{% endblock %}
+{% block content %}
+{{ page_header("AI Draft: " ~ execution.task_type) }}
+<p class="alert alert-warning" role="status">
+  This is an AI-generated draft. It has not been submitted anywhere. Review it and copy what's
+  useful into the real form yourself — nothing here changes any compliance record.
+</p>
+<dl>
+  <dt>Status</dt><dd>{{ execution.status }}</dd>
+  {% if execution.entity_type %}
+  <dt>Subject</dt><dd>{{ execution.entity_type }} / {{ execution.entity_id }}</dd>
+  {% endif %}
+  {% if execution.provider_name %}
+  <dt>Provider</dt><dd>{{ execution.provider_name }} ({{ execution.model }})</dd>
+  {% else %}
+  <dt>Provider</dt><dd>None — deterministic fact sheet only</dd>
+  {% endif %}
+  {% if execution.error_message %}
+  <dt>Error</dt><dd>{{ execution.error_message }}</dd>
+  {% endif %}
+</dl>
+<h2>Draft text</h2>
+<pre class="border rounded p-3">{{ execution.output_text }}</pre>
+{% endblock %}
