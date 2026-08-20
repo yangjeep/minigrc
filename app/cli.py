@@ -26,6 +26,7 @@ from app.config import get_settings
 from app.control_occurrences import generate_occurrences
 from app.crypto import DecryptionError, EncryptionNotConfiguredError, decrypt
 from app.db import build_engine, init_db, make_session_factory, session_scope
+from app.digital_tpm import generate_due_reminders
 from app.imports import run_import
 from app.models import AwsConnection, ControlPeriod, InternalControl, User
 from app.security import hash_password, normalize_email
@@ -375,6 +376,22 @@ def uat_command(node_filter: str | None, postgres: bool) -> int:
     return pytest.main(args)
 
 
+def ai_nag_scan_command() -> int:
+    """Run one deterministic-eligibility, cooldown/escalation-bounded nag
+    pass (issue #15). Suitable for an external cron later — this command
+    itself adds no scheduling infrastructure, matching aws_run_checks's
+    precedent."""
+    settings = get_settings()
+    engine = build_engine(settings.resolved_engine_target)
+    init_db(engine)
+    session_factory = make_session_factory(engine)
+
+    with session_scope(session_factory) as session:
+        created = generate_due_reminders(session, settings, actor="cli:ai-nag-scan")
+        print(f"Recorded {len(created)} reminder(s).")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -460,6 +477,8 @@ def main(argv: list[str] | None = None) -> int:
     mcp_server_parser.add_argument("--host", default="127.0.0.1", help="Bind host (default 127.0.0.1)")
     mcp_server_parser.add_argument("--port", type=int, default=8100, help="Bind port (default 8100)")
 
+    subparsers.add_parser("ai-nag-scan", help="Run one bounded Digital Compliance TPM nag pass (issue #15)")
+
     args = parser.parse_args(argv)
 
     if args.command == "migrate":
@@ -486,6 +505,8 @@ def main(argv: list[str] | None = None) -> int:
         return uat_command(args.node_filter, args.postgres)
     if args.command == "mcp-server":
         return mcp_server_command(args.host, args.port)
+    if args.command == "ai-nag-scan":
+        return ai_nag_scan_command()
 
     parser.print_help()
     return 1
