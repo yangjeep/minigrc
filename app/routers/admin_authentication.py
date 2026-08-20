@@ -21,6 +21,7 @@ from app.flash import redirect_with_flash
 from app.google_oidc_config import resolve_google_oidc_config
 from app.models import USER_ROLES, GoogleOidcSettings, OidcProviderSettings, OidcRoleMapping, User, new_id
 from app.oidc_config import resolve_oidc_config
+from app.oidc_identity_evidence import capture_oidc_identity_population_snapshot
 from app.secrets import create_encrypted_secret
 
 router = APIRouter(prefix="/admin/authentication", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -217,6 +218,34 @@ def update_oidc_settings(
         actor=admin.email,
     )
     return redirect_with_flash("/admin/authentication/oidc", "Generic OIDC settings saved.")
+
+
+@router.post("/oidc/identity-snapshot")
+def capture_oidc_identity_snapshot_route(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+    _csrf: None = Depends(verify_csrf),
+):
+    """Issue #20: freeze miniGRC's own record of who has authenticated
+    via the configured generic OIDC provider, plus each account's
+    currently-mapped role, as access-control evidence. Admin-only
+    (stricter than most evidence-linking actions elsewhere) given the
+    sensitivity of identity/access-population data. Never marks any
+    control occurrence performed — capture is independent from
+    attaching the resulting evidence to one, which happens on the
+    existing /evidence page like any other evidence snapshot."""
+    snapshot = capture_oidc_identity_population_snapshot(db)
+    db.add(snapshot)
+    db.flush()
+    record_audit_event(
+        db,
+        entity_type="evidence_snapshot",
+        entity_id=snapshot.id,
+        action="capture_oidc_identity_snapshot",
+        detail=snapshot.title,
+        actor=admin.email,
+    )
+    return redirect_with_flash("/admin/authentication/oidc", f"Captured evidence snapshot: {snapshot.title}.")
 
 
 @router.get("/oidc/roles")
