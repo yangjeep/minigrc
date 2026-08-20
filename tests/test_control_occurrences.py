@@ -566,6 +566,85 @@ def test_responsible_person_id_snapshotted_not_live_join(app):
         assert all(o.responsible_person_id == new_owner.id for o in second_batch)
 
 
+def test_generate_occurrences_has_no_control_definition_version_before_one_exists(app):
+    """A control with no InternalControlVersion yet gets NULL, not a
+    fabricated reference (issue #42) — an honest gap, matching
+    RULES.md's "never invent historical events for existing rows"."""
+    with app.state.session_factory() as session:
+        control = _make_control(session, cadence_type="calendar", cadence_interval_months=3)
+        period = _make_period(session, status="active")
+
+        batch = generate_occurrences(session, control, period=period, actor_type="system")
+        session.commit()
+
+        assert all(o.control_definition_version_id is None for o in batch)
+
+
+def test_control_definition_version_id_snapshotted_not_live_join(app):
+    """Historical stability, mirroring
+    test_responsible_person_id_snapshotted_not_live_join: an occurrence
+    generated while one control-definition version was effective must
+    keep referencing that exact version even after a later version
+    becomes effective; newly generated occurrences reference the new
+    one (issue #42)."""
+    from app.control_definition_lifecycle import (
+        draft_control_definition_version as draft_version,
+    )
+    from app.control_definition_lifecycle import (
+        make_version_effective,
+        review_version,
+        submit_for_review,
+    )
+
+    with app.state.session_factory() as session:
+        control = _make_control(session, cadence_type="calendar", cadence_interval_months=3)
+        v1 = draft_version(session, control)
+        submit_for_review(session, v1, actor_id="user-1")
+        review_version(session, v1, decision="approved", actor_id="user-2")
+        make_version_effective(session, v1, actor_id="user-2")
+        session.commit()
+
+        period = _make_period(session, status="active")
+        first_batch = generate_occurrences(session, control, period=period, actor_type="system")
+        session.commit()
+        assert all(o.control_definition_version_id == v1.id for o in first_batch)
+
+        v2 = draft_version(session, control)
+        submit_for_review(session, v2, actor_id="user-1")
+        review_version(session, v2, decision="approved", actor_id="user-2")
+        make_version_effective(session, v2, actor_id="user-2")  # supersedes v1
+        session.commit()
+
+        second_period = _make_period(
+            session,
+            name="Second period",
+            starts_on=datetime.date(2027, 1, 1),
+            ends_on=datetime.date(2027, 6, 30),
+            status="active",
+        )
+        second_batch = generate_occurrences(session, control, period=second_period, actor_type="system")
+        session.commit()
+
+        for occurrence in first_batch:
+            session.refresh(occurrence)
+            assert occurrence.control_definition_version_id == v1.id
+        assert all(o.control_definition_version_id == v2.id for o in second_batch)
+
+
+def test_record_occurrence_manually_snapshots_control_definition_version(app):
+    from app.control_definition_lifecycle import bootstrap_initial_effective_version
+
+    with app.state.session_factory() as session:
+        control = _make_control(session)
+        version = bootstrap_initial_effective_version(session, control)
+        session.commit()
+
+        occurrence = record_occurrence_manually(session, control, actor_type="user", actor_id="user-1")
+        session.commit()
+
+        assert occurrence.control_definition_version_id == version.id
+
+
 def test_rebuild_control_occurrence_projection_reproduces_state(app):
     with app.state.session_factory() as session:
         control = _make_control(session, cadence_type="calendar", cadence_interval_months=3)

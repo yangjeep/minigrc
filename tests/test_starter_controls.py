@@ -95,3 +95,25 @@ def test_records_an_audit_event_per_created_control(app):
         )
         assert event is not None
         assert event.actor == "tester@example.com"
+
+
+def test_starter_controls_get_a_real_effective_definition_version(app):
+    """Issue #42: every starter control begins with a genuine
+    event-sourced InternalControlVersion, not just controls that
+    already existed when #42's migration backfill ran."""
+    with app.state.session_factory() as session:
+        framework = _make_framework(session, requirement_codes=["A.1", "A.2"])
+        created = generate_starter_controls_for_framework(session, framework, actor="tester@example.com")
+        session.commit()
+
+        for control in created:
+            session.refresh(control)
+            version = control.effective_version
+            assert version is not None
+            assert version.lifecycle_status == "effective"
+            assert version.name == control.name
+            assert version.status_snapshot == "not_started"
+            mapped_ids = {m.requirement_id for m in control.mappings}
+            import json
+
+            assert set(json.loads(version.mapped_requirement_ids_json)) == mapped_ids
