@@ -41,6 +41,7 @@ from app.control_tests import rebuild_control_test_projection
 from app.crypto import DecryptionError, EncryptionNotConfiguredError, decrypt
 from app.evidence_repository import rebuild_evidence_artifact_version_projection
 from app.finding_lifecycle import rebuild_finding_projection
+from app.framework_adoption import rebuild_framework_adoption_projection
 from app.models import EvidenceArtifactVersion, GoogleDriveConnection, Secret
 from app.object_storage import build_s3_client, download_object, upload_object
 from app.policy_lifecycle import rebuild_policy_version_lifecycle_projection
@@ -346,6 +347,7 @@ _PROJECTION_REBUILDERS = {
     "control_test": rebuild_control_test_projection,
     "compliance_scope": rebuild_compliance_scope_projection,
     "finding": rebuild_finding_projection,
+    "framework_adoption": rebuild_framework_adoption_projection,
 }
 
 
