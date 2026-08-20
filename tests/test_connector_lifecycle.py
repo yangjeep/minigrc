@@ -15,7 +15,9 @@ from sqlalchemy import select
 
 from app.connector_lifecycle import (
     ConnectorLifecycleError,
+    apply_connector_instance_upgrade,
     install_connector_instance,
+    plan_connector_instance_upgrade,
     remove_connector_instance,
     resolve_connector_config,
     run_connector_instance,
@@ -493,3 +495,152 @@ def test_partial_ingestion_write_is_rolled_back_on_later_failure(app, actor, mon
         assert execution.status == "failure"
         assert "downstream failure after a partial write" in execution.error_summary
         assert session.scalar(select(EvidenceSnapshot)) is None
+
+
+# --- issue #27: upgrade/rollback lifecycle ----------------------------------
+
+
+def test_upgrade_plan_surfaces_new_capabilities_and_permissions(app, actor):
+    with app.state.session_factory() as session:
+        instance = _install(session, actor)
+        session.commit()
+
+        from_manifest = _fake_manifest()
+        to_manifest = _fake_manifest(
+            version="1.1.0",
+            capabilities=("configuration.snapshot", "evidence.collect"),
+            required_permissions=("new.readonly.scope",),
+        )
+        plan = plan_connector_instance_upgrade(instance, from_manifest, to_manifest)
+
+        assert plan.direction == "upgrade"
+        assert plan.new_capabilities == ("evidence.collect",)
+        assert plan.new_required_permissions == ("new.readonly.scope",)
+
+
+def test_apply_upgrade_moves_version_and_audits(app, actor):
+    with app.state.session_factory() as session:
+        instance = _install(session, actor)
+        session.commit()
+
+        from_manifest = _fake_manifest()
+        to_manifest = _fake_manifest(version="1.1.0")
+        plan = plan_connector_instance_upgrade(instance, from_manifest, to_manifest)
+        apply_connector_instance_upgrade(session, instance, plan, to_manifest, actor=actor)
+        session.commit()
+
+        assert instance.manifest_version == "1.1.0"
+        audit = session.scalars(
+            select(AuditEvent).where(AuditEvent.entity_id == instance.id, AuditEvent.action == "upgrade")
+        ).all()
+        assert len(audit) == 1
+        assert "1.0.0" in audit[0].detail and "1.1.0" in audit[0].detail
+
+
+def test_plan_rejects_identity_confusion(app, actor):
+    with app.state.session_factory() as session:
+        instance = _install(session, actor)
+        session.commit()
+
+        other_connector_manifest = _fake_manifest(connector_id="a_different_connector")
+        with pytest.raises(ConnectorLifecycleError, match="identity confusion"):
+            plan_connector_instance_upgrade(instance, _fake_manifest(), other_connector_manifest)
+
+
+def test_plan_rejects_incompatible_core_contract_version(app, actor):
+    with app.state.session_factory() as session:
+        instance = _install(session, actor)
+        session.commit()
+
+        incompatible_manifest = _fake_manifest(version="1.1.0", min_core_contract_version=999)
+        with pytest.raises(ConnectorContractError):
+            plan_connector_instance_upgrade(instance, _fake_manifest(), incompatible_manifest)
+
+
+def test_apply_rejects_silent_downgrade(app, actor):
+    with app.state.session_factory() as session:
+        instance = _install(session, actor)
+        instance.manifest_version = "1.5.0"
+        session.commit()
+
+        from_manifest = _fake_manifest(version="1.5.0")
+        to_manifest = _fake_manifest(version="1.0.0")
+        plan = plan_connector_instance_upgrade(instance, from_manifest, to_manifest)
+        assert plan.direction == "downgrade"
+
+        with pytest.raises(ConnectorLifecycleError, match="downgrade"):
+            apply_connector_instance_upgrade(session, instance, plan, to_manifest, actor=actor)
+        assert instance.manifest_version == "1.5.0"  # unchanged
+
+
+def test_apply_allows_explicit_acknowledged_downgrade_and_audits_as_rollback(app, actor):
+    with app.state.session_factory() as session:
+        instance = _install(session, actor)
+        instance.manifest_version = "1.5.0"
+        session.commit()
+
+        from_manifest = _fake_manifest(version="1.5.0")
+        to_manifest = _fake_manifest(version="1.0.0")
+        plan = plan_connector_instance_upgrade(instance, from_manifest, to_manifest)
+        apply_connector_instance_upgrade(
+            session, instance, plan, to_manifest, actor=actor, allow_downgrade=True
+        )
+        session.commit()
+
+        assert instance.manifest_version == "1.0.0"
+        audit = session.scalars(
+            select(AuditEvent).where(AuditEvent.entity_id == instance.id, AuditEvent.action == "rollback")
+        ).all()
+        assert len(audit) == 1
+
+
+def test_apply_rejects_stale_plan_after_concurrent_version_change(app, actor):
+    """A plan computed against an old starting version must not apply
+    if the instance has since moved on — otherwise a stale "upgrade"
+    plan (relative to its own stale starting point) could silently move
+    the instance *backward* from its real current version while
+    plan.direction still reads "upgrade"."""
+    with app.state.session_factory() as session:
+        instance = _install(session, actor)
+        session.commit()
+
+        stale_plan = plan_connector_instance_upgrade(
+            instance, _fake_manifest(version="1.0.0"), _fake_manifest(version="1.1.0")
+        )
+
+        # Someone else applies a different, newer upgrade first.
+        other_plan = plan_connector_instance_upgrade(
+            instance, _fake_manifest(version="1.0.0"), _fake_manifest(version="1.2.0")
+        )
+        apply_connector_instance_upgrade(
+            session, instance, other_plan, _fake_manifest(version="1.2.0"), actor=actor
+        )
+        session.commit()
+        assert instance.manifest_version == "1.2.0"
+
+        with pytest.raises(ConnectorLifecycleError, match="reload and re-plan"):
+            apply_connector_instance_upgrade(
+                session, instance, stale_plan, _fake_manifest(version="1.1.0"), actor=actor
+            )
+        assert instance.manifest_version == "1.2.0"  # unchanged, not silently moved backward
+
+
+def test_apply_rejects_substituted_manifest_not_matching_reviewed_plan(app, actor):
+    """A plan's checks (compatibility/capabilities/permissions) were
+    only ever run against the manifest that produced it. Applying with
+    a *different* to_manifest — e.g. one with extra capabilities the
+    plan never surfaced — must be rejected, not silently accepted."""
+    with app.state.session_factory() as session:
+        instance = _install(session, actor)
+        session.commit()
+
+        plan = plan_connector_instance_upgrade(
+            instance, _fake_manifest(version="1.0.0"), _fake_manifest(version="1.1.0")
+        )
+        substituted_manifest = _fake_manifest(
+            version="1.1.0", capabilities=("configuration.snapshot", "identity.population")
+        )
+
+        with pytest.raises(ConnectorLifecycleError, match="does not match the plan's reviewed version"):
+            apply_connector_instance_upgrade(session, instance, plan, substituted_manifest, actor=actor)
+        assert instance.manifest_version == "1.0.0"  # unchanged

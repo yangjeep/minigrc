@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime
 import json
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -361,3 +362,154 @@ def run_connector_instance(
     instance.last_success_at = execution.finished_at
     session.flush()
     return execution
+
+
+def _semver_tuple(version: str) -> tuple[int, int, int]:
+    """`version` must already be validate_manifest-shaped (`X.Y.Z`) by
+    the time it reaches here — both ConnectorManifest.version and
+    ConnectorInstance.manifest_version are only ever set from a
+    validated manifest."""
+    major, minor, patch = version.split(".")
+    return (int(major), int(minor), int(patch))
+
+
+@dataclass(frozen=True)
+class ConnectorUpgradePlan:
+    """A no-mutation preview of moving `instance` from `from_manifest`
+    to `to_manifest` (issue #27) — mirrors the existing
+    plan-then-apply shape `test_connector_instance` already uses for a
+    safe preview step. `direction` is purely informational for
+    "upgrade"/"same"; `apply_connector_instance_upgrade` is what
+    actually enforces the no-silent-downgrade rule."""
+
+    connector_id: str
+    from_version: str
+    to_version: str
+    direction: str  # "upgrade" | "downgrade" | "same"
+    new_capabilities: tuple[str, ...]
+    new_required_permissions: tuple[str, ...]
+    # Full (not just new) capabilities/permissions of the reviewed
+    # to_manifest — apply_connector_instance_upgrade verifies whatever
+    # to_manifest it's given still matches these exactly, so a manifest
+    # with the same version string but different capabilities can't be
+    # substituted at apply time (see apply's docstring).
+    to_capabilities: tuple[str, ...]
+    to_required_permissions: tuple[str, ...]
+
+
+def plan_connector_instance_upgrade(
+    instance: ConnectorInstance, from_manifest: ConnectorManifest, to_manifest: ConnectorManifest
+) -> ConnectorUpgradePlan:
+    """Pure, no I/O. Always raises for identity confusion or core-
+    contract incompatibility — those are never valid, with no override.
+    Never raises for a downgrade: that is a valid plan outcome the
+    caller must explicitly acknowledge via
+    `apply_connector_instance_upgrade(..., allow_downgrade=True)`."""
+    if to_manifest.connector_id != instance.connector_id:
+        raise ConnectorLifecycleError(
+            f"cannot upgrade connector instance for {instance.connector_id!r} to a manifest for "
+            f"{to_manifest.connector_id!r} — identity confusion"
+        )
+    validate_manifest(to_manifest)
+    check_compatibility(to_manifest)
+
+    from_version = _semver_tuple(from_manifest.version)
+    to_version = _semver_tuple(to_manifest.version)
+    if to_version > from_version:
+        direction = "upgrade"
+    elif to_version < from_version:
+        direction = "downgrade"
+    else:
+        direction = "same"
+
+    new_capabilities = tuple(c for c in to_manifest.capabilities if c not in from_manifest.capabilities)
+    new_required_permissions = tuple(
+        p for p in to_manifest.required_permissions if p not in from_manifest.required_permissions
+    )
+    return ConnectorUpgradePlan(
+        connector_id=instance.connector_id,
+        from_version=from_manifest.version,
+        to_version=to_manifest.version,
+        direction=direction,
+        new_capabilities=new_capabilities,
+        new_required_permissions=new_required_permissions,
+        to_capabilities=to_manifest.capabilities,
+        to_required_permissions=to_manifest.required_permissions,
+    )
+
+
+def apply_connector_instance_upgrade(
+    session: Session,
+    instance: ConnectorInstance,
+    plan: ConnectorUpgradePlan,
+    to_manifest: ConnectorManifest,
+    *,
+    actor: User,
+    allow_downgrade: bool = False,
+) -> ConnectorInstance:
+    """Mutates `instance.manifest_version` to `to_manifest.version`.
+    Raises ConnectorLifecycleError if `plan.direction == "downgrade"`
+    and `allow_downgrade` is not explicitly set — a downgrade is never
+    silent/automatic. Audits as `"rollback"` when an acknowledged
+    downgrade was actually applied, `"upgrade"` otherwise, and records
+    the new capabilities/permissions the plan surfaced so the audit
+    trail preserves exactly what was shown before the change.
+
+    Also raises if `instance.manifest_version` no longer matches
+    `plan.from_version` — the same stale-plan/optimistic-concurrency
+    guard `app.registers`'s PATCH API already uses via
+    `expected_updated_at`. Without this, a plan computed against an old
+    version, applied after someone else already moved the instance
+    to a newer version, could silently move it *backward* from that
+    newer version while `plan.direction` still reads "upgrade" (it was
+    computed against the stale starting point, not the instance's
+    current state).
+
+    Also raises if `to_manifest`'s version/capabilities/permissions
+    don't exactly match what `plan` reviewed — a caller must not
+    substitute a different manifest at apply time than the one
+    `plan_connector_instance_upgrade` actually checked compatibility/
+    capabilities/permissions against. Matching on version alone would
+    not be enough: two manifest objects could share a version string
+    while differing in capabilities.
+    """
+    if instance.manifest_version != plan.from_version:
+        raise ConnectorLifecycleError(
+            f"connector instance '{instance.display_name}' is at version "
+            f"{instance.manifest_version!r}, not the plan's expected {plan.from_version!r} — "
+            "reload and re-plan before applying"
+        )
+    if plan.direction == "downgrade" and not allow_downgrade:
+        raise ConnectorLifecycleError(
+            f"refusing to silently downgrade connector instance '{instance.display_name}' from "
+            f"{plan.from_version} to {plan.to_version} — pass allow_downgrade=True for an explicit rollback"
+        )
+    if plan.connector_id != instance.connector_id or to_manifest.connector_id != instance.connector_id:
+        raise ConnectorLifecycleError("upgrade plan/manifest do not match this connector instance")
+    if (
+        to_manifest.version != plan.to_version
+        or to_manifest.capabilities != plan.to_capabilities
+        or to_manifest.required_permissions != plan.to_required_permissions
+    ):
+        raise ConnectorLifecycleError(
+            "to_manifest does not match the plan's reviewed version/capabilities/permissions — "
+            "a different manifest must not be substituted at apply time"
+        )
+
+    action = "rollback" if plan.direction == "downgrade" else "upgrade"
+    instance.manifest_version = to_manifest.version
+    session.flush()
+    record_audit_event(
+        session,
+        entity_type="connector_instance",
+        entity_id=instance.id,
+        action=action,
+        detail=(
+            f"{action.capitalize()}d connector instance '{instance.display_name}' from "
+            f"{plan.from_version} to {plan.to_version}; new capabilities: "
+            f"{list(plan.new_capabilities)}; new required permissions: "
+            f"{list(plan.new_required_permissions)}"
+        ),
+        actor=actor.email,
+    )
+    return instance
