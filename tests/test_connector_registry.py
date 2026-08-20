@@ -9,10 +9,13 @@ import pytest
 from cryptography.fernet import Fernet
 
 from app.connector_registry import (
+    PermissionReview,
     RegistryError,
+    build_permission_review,
     filter_by_capability,
     filter_compatible,
     install_from_registry,
+    list_deprecated_installed_instances,
     load_registry,
     to_manifest,
 )
@@ -200,3 +203,89 @@ def test_install_from_registry_uses_the_real_lifecycle_boundary(app, actor, tmp_
 
         row = session.get(ConnectorInstance, instance.id)
         assert row is not None
+
+
+# --- issue #27: registry integrity hardening -------------------------------
+
+
+def test_load_identity_confusion_raises(tmp_path):
+    """Same connector_id under two different publishers is exactly what
+    package/identity squatting looks like — reject at load time."""
+    path = _write_registry(
+        tmp_path,
+        [
+            _fake_entry(connector_id="shared_id", publisher="trusted-vendor"),
+            _fake_entry(connector_id="shared_id", version="1.0.1", publisher="different-vendor"),
+        ],
+    )
+    with pytest.raises(RegistryError, match="identity confusion"):
+        load_registry(path)
+
+
+def test_load_malformed_checksum_raises(tmp_path):
+    path = _write_registry(tmp_path, [_fake_entry(checksum_sha256="not-a-real-checksum")])
+    with pytest.raises(RegistryError, match="checksum_sha256"):
+        load_registry(path)
+
+
+def test_load_well_formed_checksum_accepted(tmp_path):
+    valid_checksum = "a" * 64
+    path = _write_registry(tmp_path, [_fake_entry(checksum_sha256=valid_checksum)])
+    entries = load_registry(path)
+    assert entries[0].checksum_sha256 == valid_checksum
+
+
+def test_build_permission_review_flags_broad_permission(tmp_path):
+    path = _write_registry(
+        tmp_path, [_fake_entry(required_permissions=["admin.directory.user.readonly", "drive.readonly"])]
+    )
+    entry = load_registry(path)[0]
+    review = build_permission_review(entry)
+    assert isinstance(review, PermissionReview)
+    assert review.broad_permission_warnings == ("admin.directory.user.readonly",)
+    assert review.required_permissions == ("admin.directory.user.readonly", "drive.readonly")
+    assert review.capabilities == (("configuration.snapshot", review.capabilities[0][1]),)
+
+
+def test_build_permission_review_no_warnings_for_narrow_permissions(tmp_path):
+    path = _write_registry(tmp_path, [_fake_entry(required_permissions=["drive.readonly"])])
+    entry = load_registry(path)[0]
+    review = build_permission_review(entry)
+    assert review.broad_permission_warnings == ()
+
+
+def test_list_deprecated_installed_instances_finds_matching_only(app, actor, tmp_path):
+    path = _write_registry(
+        tmp_path,
+        [
+            _fake_entry(connector_id="still_current"),
+            _fake_entry(connector_id="now_deprecated", version="1.0.1", deprecated=True),
+        ],
+    )
+    entries = load_registry(path)
+
+    with app.state.session_factory() as session:
+        current_instance = install_from_registry(
+            session,
+            [e for e in entries if e.connector_id == "still_current"][0],
+            display_name="Current",
+            config={"endpoint": "https://a.example.test"},
+            secret_values={"api_token": "x"},
+            actor=actor,
+            encryption_key=TEST_KEY,
+        )
+        deprecated_instance = install_from_registry(
+            session,
+            [e for e in entries if e.connector_id == "now_deprecated"][0],
+            display_name="Deprecated",
+            config={"endpoint": "https://b.example.test"},
+            secret_values={"api_token": "y"},
+            actor=actor,
+            encryption_key=TEST_KEY,
+        )
+        session.commit()
+
+        flagged = list_deprecated_installed_instances(session, entries)
+        flagged_ids = {instance.id for instance in flagged}
+        assert deprecated_instance.id in flagged_ids
+        assert current_instance.id not in flagged_ids
