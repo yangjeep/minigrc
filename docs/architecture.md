@@ -180,7 +180,9 @@ SQLite file (GRC_DATA_DIR/grc.db)   Policy files (GRC_DATA_DIR/policies/<id>/<ve
   `sub` claim, the primary match key for OIDC login (survives an email
   change; a different subject claiming an already-linked email is
   rejected as a collision). See `docs/deployment/authentication.md` for
-  the first-login policy, break-glass recovery, and secret rotation.
+  the first-login policy, break-glass recovery, and secret rotation, and
+  `docs/deployment/configuration-contract.md` for how this axis composes
+  with the database backend, evidence storage, and BYOK AI axes.
 
 ## Admin authorization
 
