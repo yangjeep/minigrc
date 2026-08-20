@@ -21,6 +21,7 @@ from app.aws_connector import (
     check_cloudtrail,
     check_iam,
 )
+from app.backup import BackupError, create_backup, restore_backup, verify_restore
 from app.config import get_settings
 from app.control_occurrences import generate_occurrences
 from app.crypto import DecryptionError, EncryptionNotConfiguredError, decrypt
@@ -257,6 +258,82 @@ def import_directory_command(directory: str, importer_name: str) -> int:
     return 0
 
 
+def backup_command(dest: str) -> int:
+    """Back up the active DB backend, evidence store, and non-secret
+    config checklist to `dest` (issue #46). Never writes any secret
+    value — see app/backup.py's module docstring."""
+    settings = get_settings()
+    try:
+        manifest = create_backup(settings, dest)
+    except BackupError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    print(
+        f"Backed up {manifest.backend} database and {manifest.evidence_object_count} "
+        f"evidence object(s) ({manifest.evidence_total_bytes} bytes) to '{dest}'."
+    )
+    if manifest.required_env_vars_not_included:
+        print(
+            "Required env vars to resupply before restore (values were never written to this "
+            "backup): " + ", ".join(manifest.required_env_vars_not_included)
+        )
+    return 0
+
+
+def restore_command(source: str) -> int:
+    """Restore the DB backend and evidence store from `source` (issue
+    #46). Does not run migrations — run `migrate` next, then
+    `verify-restore`."""
+    settings = get_settings()
+    try:
+        manifest = restore_backup(settings, source)
+    except BackupError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    print(
+        f"Restored {manifest.backend} database and {manifest.evidence_object_count} "
+        f"evidence object(s) from '{source}'."
+    )
+    if manifest.required_env_vars_not_included:
+        print(
+            "Before starting the app, ensure these env vars are set to their ORIGINAL values "
+            "(not included in this backup): " + ", ".join(manifest.required_env_vars_not_included)
+        )
+    print("Next: run `python -m app.cli migrate` then `python -m app.cli verify-restore`.")
+    return 0
+
+
+def verify_restore_command() -> int:
+    """Prove a restored instance's evidence integrity, projection-
+    rebuild equivalence, and correct-encryption-key possession (issue
+    #46). Runs migrations first, matching every other app/cli.py
+    command's convention."""
+    settings = get_settings()
+    engine = build_engine(settings.resolved_engine_target)
+    init_db(engine)
+    session_factory = make_session_factory(engine)
+
+    report = verify_restore(session_factory, settings)
+
+    print(f"Evidence hashes verified: {report.evidence_verified_count}")
+    if report.evidence_mismatched_keys:
+        print(f"MISMATCHED evidence hashes: {', '.join(report.evidence_mismatched_keys)}", file=sys.stderr)
+    if report.evidence_missing_keys:
+        print(f"MISSING evidence objects: {', '.join(report.evidence_missing_keys)}", file=sys.stderr)
+    print(f"Projections rebuilt: {', '.join(report.projections_rebuilt) or '(none)'}")
+    if report.projection_errors:
+        print(f"PROJECTION REBUILD ERRORS: {'; '.join(report.projection_errors)}", file=sys.stderr)
+    print(f"Encryption key check: {report.decryption_check}")
+
+    if not report.passed:
+        print("error: verify-restore FAILED — see above", file=sys.stderr)
+        return 1
+    print("verify-restore passed.")
+    return 0
+
+
 def uat_command(node_filter: str | None, postgres: bool) -> int:
     """Run the headless UAT suite (issue #38) — one documented command
     for CLI agents/CI, in place of remembering the underlying pytest
@@ -330,6 +407,21 @@ def main(argv: list[str] | None = None) -> int:
         "--importer", required=True, help="Importer name to apply to claimed files"
     )
 
+    backup_parser = subparsers.add_parser(
+        "backup", help="Back up the active DB backend, evidence store, and config checklist (issue #46)"
+    )
+    backup_parser.add_argument("--dest", required=True, help="Destination directory for the backup")
+
+    restore_parser = subparsers.add_parser(
+        "restore", help="Restore the DB backend and evidence store from a backup (issue #46)"
+    )
+    restore_parser.add_argument("--source", required=True, help="Source backup directory")
+
+    subparsers.add_parser(
+        "verify-restore",
+        help="Verify a restored instance's evidence hashes, projection rebuilds, and encryption key",
+    )
+
     uat_parser = subparsers.add_parser(
         "uat", help="Run the headless UAT suite (issue #38) — see .agent/TESTING.md"
     )
@@ -356,6 +448,12 @@ def main(argv: list[str] | None = None) -> int:
         return import_csv_command(args.importer, args.file, args.framework_id)
     if args.command == "import-directory":
         return import_directory_command(args.directory, args.importer)
+    if args.command == "backup":
+        return backup_command(args.dest)
+    if args.command == "restore":
+        return restore_command(args.source)
+    if args.command == "verify-restore":
+        return verify_restore_command()
     if args.command == "uat":
         return uat_command(args.node_filter, args.postgres)
 
